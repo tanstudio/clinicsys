@@ -25,6 +25,8 @@ try {
     verify(count($branches) === 2,'Seed two branches before this test');
     $service = DB::table('services')->value('id');
     $doctor = DB::table('practitioners')->insertGetId(['name_zh' => Str::uuid(), 'name_en' => 'QA']);
+    DB::table('branch_practitioners')->insert(['branch_id'=>$branches[0], 'practitioner_id'=>$doctor]);
+    DB::table('branch_services')->insertOrIgnore(['branch_id'=>$branches[0], 'service_id'=>$service]);
     $staff = DB::table('staff_accounts')->insertGetId(['branch_id' => $branches[0], 'email' => Str::uuid().'@example.invalid',
         'password_hash' => 'disabled', 'name' => 'QA', 'role' => 'reception']);
     $request = Request::create('/staff/schedule', 'POST');

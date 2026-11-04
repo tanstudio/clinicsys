@@ -1,5 +1,6 @@
 @php
     $paths = [
+        'branches' => 'M3 21h18M5 21V5l7-2 7 2v16M8 8h2m4 0h2m-8 4h2m4 0h2m-6 9v-5h4v5',
         'schedule' => 'M4 6h16v15H4z M8 3v6m8-6v6M4 11h16m-12 4h3m2 0h3',
         'patients' => 'M3 6h7l2 2h9v12H3z M10 13a2 2 0 1 0 4 0a2 2 0 1 0-4 0m-2 5c1-3 7-3 8 0',
         'encounters' => 'M7 4h10v2h2v15H5V6h2z M8 13h3l1-3 2 6 1-3h2',
@@ -11,4 +12,4 @@
         'login' => 'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3m-4 4v3',
     ];
 @endphp
-<svg class="module-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{ $paths[$module] }}"></path></svg>
+<svg class="module-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{ $paths[['accounts'=>'login','practitioners'=>'hr','services'=>'encounters'][$module] ?? $module] }}"></path></svg>

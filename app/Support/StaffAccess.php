@@ -19,6 +19,10 @@ final class StaffAccess
             return $cached;
         }
         $account = DB::table('staff_accounts')->where(['id' => $id, 'active' => true])->first();
+        if ($account && (int)$request->session()->get('staff_version',0) !== (int)$account->session_version) {
+            $request->session()->forget(['staff_id','staff_version','staff_branch']);
+            return null;
+        }
         $request->attributes->set('clinic_staff', $account);
         return $account;
     }
@@ -39,7 +43,7 @@ final class StaffAccess
         return $account && $account->branch_id === null && $account->role === 'admin';
     }
 
-    public static function branch(): int
+    public static function currentBranch(): ?int
     {
         $account = self::account();
         abort_unless($account, 403);
@@ -48,8 +52,12 @@ final class StaffAccess
             return (int)$account->branch_id;
         }
         $id = session('staff_branch') ?: DB::table('branches')->orderBy('id')->value('id');
-        abort_unless($id, 409, 'No branch configured.');
-        return (int)$id;
+        return $id ? (int)$id : null;
+    }
+
+    public static function branch(): int
+    {
+        return self::currentBranch() ?? abort(409, 'No branch configured.');
     }
 
     public static function can(string ...$roles): bool

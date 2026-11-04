@@ -23,6 +23,11 @@ class DatabaseSeeder extends Seeder
                 $ids[$table][] = DB::table($table)->where('name_zh', $zh)->value('id');
             }
         }
+        foreach ($ids['branches'] as $branch) {
+            foreach (\App\Support\BranchDirectory::KEYS as $type=>$key) {
+                foreach ($ids[$type] as $id) DB::table('branch_'.$type)->insertOrIgnore(['branch_id'=>$branch,$key=>$id]);
+            }
+        }
         $rows = [];
         $today = today('Asia/Hong_Kong');
         for ($day = 0; $day < 14; $day++) {
