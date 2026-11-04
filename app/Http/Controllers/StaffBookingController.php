@@ -8,6 +8,7 @@ use App\Actions\RescheduleAppointment;
 use App\Models\Appointment;
 use App\Models\Slot;
 use App\Support\StaffAccess;
+use App\Support\BranchDirectory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -51,8 +52,8 @@ class StaffBookingController
             ->join('practitioners','practitioners.id','=','slots.practitioner_id')->join('services','services.id','=','slots.service_id')
             ->orderBy('slots.starts_at')->orderBy('slots.id')
             ->get(['slots.*','practitioners.name_zh as practitioner','services.name_zh as service','appointments.reference','appointments.patient_id','encounters.id as encounter_id']);
-        $practitioners = DB::table('practitioners')->orderBy('name_zh')->get();
-        $services = DB::table('services')->orderBy('name_zh')->get();
+        $practitioners = BranchDirectory::entries('practitioners', $branch)->where('membership.active',true)->orderBy('name_zh')->get();
+        $services = BranchDirectory::entries('services', $branch)->where('membership.active',true)->orderBy('name_zh')->get();
         $now = now('Asia/Hong_Kong');
         $available = DB::table('slots')->where('slots.branch_id', $branch)->whereNull('closed_at')
             ->where('starts_at','>', $now)->where('starts_at','<', $now->copy()->startOfDay()->addDays(14))
@@ -71,8 +72,12 @@ class StaffBookingController
         $starts = $data['date'].' '.$data['time'].':00';
         abort_if($starts <= now('Asia/Hong_Kong')->toDateTimeString(), 422, '請選擇未來的時段。');
         try {
-            DB::table('slots')->insert(['branch_id' => StaffAccess::branch(), 'practitioner_id' => $data['practitioner_id'],
-                'service_id' => $data['service_id'], 'starts_at' => $starts]);
+            DB::transaction(function () use ($data, $starts) {
+                $branch = StaffAccess::branch();
+                BranchDirectory::requireActive($branch, $data);
+                DB::table('slots')->insert(['branch_id'=>$branch, 'practitioner_id'=>$data['practitioner_id'],
+                    'service_id'=>$data['service_id'], 'starts_at'=>$starts]);
+            }, 3);
         } catch (\Illuminate\Database\UniqueConstraintViolationException) {
             return back()->withErrors(['time' => '該醫師在此時間已有排班。']);
         }
@@ -85,6 +90,7 @@ class StaffBookingController
         $data = $request->validate(['state' => 'required|in:open,closed']);
         DB::transaction(function () use ($id, $data) {
             $slot = Slot::whereBranchId(StaffAccess::branch())->whereKey($id)->lockForUpdate()->firstOrFail();
+            if ($data['state'] === 'open') BranchDirectory::requireActive(StaffAccess::branch(), $slot->toArray());
             abort_if($slot->starts_at <= now('Asia/Hong_Kong')->toDateTimeString(), 409, '此時段已開始。');
             abort_if(Appointment::whereSlotId($id)->whereNull('cancelled_at')->lockForUpdate()->first(), 409, '此時段已有預約。');
             DB::table('slots')->where('id',$id)->update(['closed_at' => $data['state'] === 'closed' ? now() : null]);

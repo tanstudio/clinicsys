@@ -12,4 +12,4 @@
         'login' => 'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3m-4 4v3',
     ];
 @endphp
-<svg class="module-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{ $paths[$module] }}"></path></svg>
+<svg class="module-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{ $paths[['accounts'=>'login','practitioners'=>'hr','services'=>'encounters'][$module] ?? $module] }}"></path></svg>

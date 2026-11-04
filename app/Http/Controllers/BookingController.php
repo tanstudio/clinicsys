@@ -34,8 +34,8 @@ class BookingController
         return response()->json([
             'slots' => $slots,
             'branches' => DB::table('branches')->orderBy('id')->get(),
-            'services' => DB::table('services')->orderBy('id')->get(),
-            'practitioners' => DB::table('practitioners')->orderBy('id')->get(),
+            'services' => DB::table('services')->whereIn('id',$slots->pluck('service_id'))->orderBy('id')->get(),
+            'practitioners' => DB::table('practitioners')->whereIn('id',$slots->pluck('practitioner_id'))->orderBy('id')->get(),
         ])->header('Cache-Control', 'no-store');
     }
 

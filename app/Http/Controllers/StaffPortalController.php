@@ -17,7 +17,7 @@ class StaffPortalController
             return back()->withErrors(['email' => '電郵地址或密碼不正確。'])->onlyInput('email');
         }
         $request->session()->regenerate();
-        $request->session()->put('staff_id', $account->id);
+        $request->session()->put(['staff_id'=>$account->id,'staff_version'=>$account->session_version]);
         $request->session()->forget('staff_branch');
         return redirect('/staff');
     }

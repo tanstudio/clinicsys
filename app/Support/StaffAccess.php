@@ -19,6 +19,10 @@ final class StaffAccess
             return $cached;
         }
         $account = DB::table('staff_accounts')->where(['id' => $id, 'active' => true])->first();
+        if ($account && (int)$request->session()->get('staff_version',0) !== (int)$account->session_version) {
+            $request->session()->forget(['staff_id','staff_version','staff_branch']);
+            return null;
+        }
         $request->attributes->set('clinic_staff', $account);
         return $account;
     }
