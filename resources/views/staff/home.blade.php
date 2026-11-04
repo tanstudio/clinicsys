@@ -8,6 +8,10 @@
 </header>
 <h2 class="home-section">工作項目</h2>
 <div class="portal-index">
+@if(\App\Support\StaffAccess::hq())
+<a class="portal-item" href="/staff/branches"><span class="item-icon">@include('staff.icon', ['module'=>'branches'])</span><span class="item-text"><strong>分店管理</strong><small>查看分店名單及新增分店</small></span></a>
+@endif
+@if(\App\Support\StaffAccess::currentBranch() !== null)
 @foreach([
  ['門診排班','排班及可預約時段','schedule',['reception']],
  ['患者檔案','聯絡資料、預約紀錄及跟進','patients',['doctor','reception']],
@@ -22,4 +26,5 @@
 <a class="portal-item" href="/staff/{{ $path }}"><span class="item-icon">@include('staff.icon', ['module'=>$path])</span><span class="item-text"><strong>{{ $name }}</strong><small>{{ $description }}</small></span><svg class="item-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></a>
 @endif
 @endforeach
+@endif
 </div>@endsection

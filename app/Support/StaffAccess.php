@@ -39,7 +39,7 @@ final class StaffAccess
         return $account && $account->branch_id === null && $account->role === 'admin';
     }
 
-    public static function branch(): int
+    public static function currentBranch(): ?int
     {
         $account = self::account();
         abort_unless($account, 403);
@@ -48,8 +48,12 @@ final class StaffAccess
             return (int)$account->branch_id;
         }
         $id = session('staff_branch') ?: DB::table('branches')->orderBy('id')->value('id');
-        abort_unless($id, 409, 'No branch configured.');
-        return (int)$id;
+        return $id ? (int)$id : null;
+    }
+
+    public static function branch(): int
+    {
+        return self::currentBranch() ?? abort(409, 'No branch configured.');
     }
 
     public static function can(string ...$roles): bool

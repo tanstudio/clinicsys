@@ -7,7 +7,10 @@
 @if(\App\Support\StaffAccess::account())
 <div class="portal-tools">
 @if(\App\Support\StaffAccess::hq())
-<form method="post" action="/staff/branch">@csrf<label>目前分店 <select name="branch_id">@foreach(\Illuminate\Support\Facades\DB::table('branches')->orderBy('id')->get() as $b)<option value="{{ $b->id }}" @selected($b->id == \App\Support\StaffAccess::branch())>{{ $b->name_zh }}</option>@endforeach</select></label><button>切換</button></form>
+@php($branchList = \Illuminate\Support\Facades\DB::table('branches')->orderBy('id')->get())
+@if($branchList->isNotEmpty())
+<form method="post" action="/staff/branch">@csrf<label>目前分店 <select name="branch_id">@foreach($branchList as $b)<option value="{{ $b->id }}" @selected($b->id == \App\Support\StaffAccess::branch())>{{ $b->name_zh }}</option>@endforeach</select></label><button>切換</button></form>
+@else<span>尚未設立分店</span>@endif
 @else
 <span>{{ \Illuminate\Support\Facades\DB::table('branches')->where('id',\App\Support\StaffAccess::branch())->value('name_zh') }}</span>
 @endif
