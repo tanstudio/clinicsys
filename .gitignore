@@ -1,0 +1,16 @@
+.env
+/vendor/
+/node_modules/
+/public/assets/*.js
+/bootstrap/cache/*.php
+/storage/framework/*/*
+/storage/logs/*.log
+
+/storage/review-login.txt
+
+# Local environment, private records and operating-system files
+.env.*
+!.env.example
+/storage/
+/database/*.sqlite*
+.DS_Store
