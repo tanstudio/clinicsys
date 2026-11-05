@@ -30,10 +30,10 @@ class ClinicalBrowser
     private array $cookies = [];
     private string $csrf = '';
 
-    public function visit(string $method, string $path, array $data = [], int $expected = 200): string
+    public function visit(string $method, string $path, array $data = [], int $expected = 200, bool $htmlError = false): string
     {
         $request = Request::create($path, $method, $data + ['_token' => $this->csrf], $this->cookies,
-            [], ['HTTP_ACCEPT' => $expected >= 400 ? 'application/json' : 'text/html']);
+            [], ['HTTP_ACCEPT' => $expected >= 400 && !$htmlError ? 'application/json' : 'text/html']);
         $kernel = app(Kernel::class);
         $response = $kernel->handle($request);
         foreach ($response->headers->getCookies() as $cookie) {
@@ -41,7 +41,7 @@ class ClinicalBrowser
         }
         $html = (string)$response->getContent();
         check($response->getStatusCode() === $expected, "$method $path expected $expected, got ".$response->getStatusCode()."\n".strip_tags(substr($html,0,1000)));
-        if ($expected === 200 && !str_contains($path, '/login')) {
+        if (($expected === 200 || $htmlError) && !str_contains($path, '/login')) {
             check($response->headers->hasCacheControlDirective('no-store'), 'Missing no-store header');
         }
         if (preg_match('/name="csrf-token" content="([^"]+)"/', $html, $match)) {
@@ -103,6 +103,16 @@ try {
     $new = '/staff/encounters/new/'.$visits[0]->id;
     check(str_contains($doctor->visit('GET',$new.'?template='.$template->id), 'QA protected note'),'Template prefill');
     $doctor->visit('POST',$new,['diagnosis' => 'QA', 'symptoms' => ['invalid']],422);
+    $invalid = array_replace($record, ['diagnosis' => '', 'notes' => '<script>clinical-private-marker</script>']);
+    $retry = $doctor->visit('POST', $new, $invalid, 422, true);
+    check(str_contains($retry, '病歷尚未儲存') && str_contains($retry, 'aria-invalid="true"'), 'Missing inline validation');
+    check(str_contains($retry, '&lt;script&gt;clinical-private-marker&lt;/script&gt;') && !str_contains($retry, '<script>clinical-private-marker'), 'Clinical input must be preserved and escaped');
+    check(str_contains($retry, 'QA prescription') && str_contains($retry, 'value="疼痛" checked'), 'Retry lost valid fields');
+    check(!Encounter::where('appointment_id', $visits[0]->id)->exists(), 'Invalid record persisted');
+    check(!str_contains(serialize(app('session')->all()), 'clinical-private-marker'), 'Clinical text leaked to session');
+    $doctor->visit('POST', $new, ['diagnosis' => ['invalid'], 'symptoms' => [['invalid']]], 422, true);
+    $fresh = $doctor->visit('GET', $new);
+    check(!str_contains($fresh, 'clinical-private-marker'), 'Clinical text carried into a new request');
     $doctor->visit('POST',$new,$record,302);
     $doctor->visit('POST',$new,$record,409);
     $first = Encounter::where('appointment_id',$visits[0]->id)->sole();

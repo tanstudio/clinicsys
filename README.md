@@ -75,4 +75,5 @@ for suite in reschedule staff-booking clinical commerce hr messaging clinic-jour
 node tests/booking.mjs
 node tests/booking-management.mjs
 node tests/staff-roles.mjs
+node tests/clinical-form.mjs
 ```
