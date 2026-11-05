@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ClinicalController
 {
@@ -76,7 +77,12 @@ class ClinicalController
         ];
         // Avoid flashing unencrypted clinical text to the session on validation errors.
         $validator = Validator::make($request->all(), $rules);
-        abort_if($validator->fails(), 422, '請檢查病歷欄位及字數。');
+        if ($validator->fails()) {
+            if ($template) {
+                abort(422, '請檢查病歷欄位及字數。');
+            }
+            throw new ValidationException($validator);
+        }
         $record = $validator->validated() + array_fill_keys(array_keys(self::FIELDS), '');
         $record['symptoms'] = $record['symptoms'] ?: [];
         return $record;
@@ -85,7 +91,33 @@ class ClinicalController
     public function store(Request $request, int $appointment)
     {
         $branch = $this->branch();
-        $record = $this->validateRecord($request);
+        $booking = $this->booking($branch, $appointment)->firstOrFail();
+        try {
+            $record = $this->validateRecord($request);
+        } catch (ValidationException $error) {
+            $recordErrors = [];
+            foreach ($error->errors() as $field => $messages) {
+                $field = explode('.', $field)[0];
+                $recordErrors[$field] = $field === 'symptoms'
+                    ? '請從症狀分類中選取，勿重複選擇。'
+                    : ($field === 'diagnosis' ? '請填寫辨證及診斷，最多 8,000 字。' : '請輸入文字，最多 8,000 字。');
+            }
+            if ($request->expectsJson()) {
+                return response()->json(['message' => '請檢查病歷欄位及字數。', 'errors' => $recordErrors], 422);
+            }
+            // Re-render this response only. Never flash clinical text to the session.
+            $record = [];
+            foreach (self::FIELDS as $field => $label) {
+                $value = $request->input($field);
+                $record[$field] = $field === 'symptoms'
+                    ? (is_array($value) ? array_values(array_intersect(self::SYMPTOMS, array_filter($value, 'is_string'))) : [])
+                    : (is_string($value) ? $value : '');
+            }
+            $patient = Patient::findOrFail($booking->patient_id);
+            $templates = ClinicalTemplate::where('branch_id', $branch)->orderBy('id')->get();
+            $chosen = 0;
+            return response()->view('clinical.form', compact('booking', 'patient', 'templates', 'record', 'chosen', 'recordErrors'), 422);
+        }
         return DB::transaction(function () use ($appointment, $branch, $record) {
             $booking = $this->booking($branch, $appointment)->lockForUpdate()->firstOrFail();
             abort_if(Encounter::where('appointment_id', $appointment)->exists(), 409, '此預約已有病歷。');

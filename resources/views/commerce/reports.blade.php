@@ -8,8 +8,9 @@
 @if(App\Support\StaffAccess::hq())<label>分店 <select name="branch"><option value="">全部分店</option>@foreach($branches as $id=>$name)<option value="{{ $id }}" @selected($branch == $id)>{{ $name }}</option>@endforeach</select></label>@endif
 <label>圖表指標 <select name="metric">@foreach($metrics as $key=>[$name, $unit])<option value="{{ $key }}" @selected($metric === $key)>{{ $name }}</option>@endforeach</select></label>
 <button>更新報表</button>
+<button name="format" value="csv">匯出分店指標 CSV</button>
 </form>
-<p>可將篩選後的報表加入瀏覽器書籤。</p>
+<p>可將篩選後的報表加入瀏覽器書籤。CSV 包含所選日期及分店的六項指標；無分母的比率留空。</p>
 <div class="revenue-total"><span>實收總額</span><strong>HK$ {{ number_format(array_sum(array_column($summary, 'revenue')), 2) }}</strong></div>
 <h2>{{ $metrics[$metric][0] }}（{{ $metrics[$metric][1] }}）</h2>
 @php($max = max([1, ...array_values(array_filter(array_column($summary, $metric), 'is_numeric'))]))
