@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Support\StaffAccess;
+use App\Models\Patient;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -14,19 +16,51 @@ class CommerceController
     {
         return DB::table('encounters as e')
             ->join('appointments as a', 'a.id', '=', 'e.appointment_id')
+            ->join('slots as slot', 'slot.id', '=', 'a.slot_id')
             ->where('e.branch_id', $branch)
             ->whereNull('a.cancelled_at')
-            ->select('a.reference', 'e.id')->orderByDesc('e.id');
+            ->select('a.reference', 'e.id', 'e.patient_id', 'slot.starts_at')->orderByDesc('e.id');
     }
 
-    public function inventory()
+    private function ledgerFilters(Request $request, array $rules): array
+    {
+        $filters = $request->validate($rules + [
+            'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d',
+            'page' => 'nullable|integer|min:1',
+        ]);
+        if (!empty($filters['from']) && !empty($filters['to']) && $filters['to'] < $filters['from']) {
+            throw ValidationException::withMessages(['to' => '結束日期不可早於開始日期。']);
+        }
+        return $filters;
+    }
+
+    private function ledgerPeriod($query, string $column, array $filters): void
+    {
+        if (!empty($filters['from'])) {
+            $query->where($column, '>=', CarbonImmutable::parse($filters['from'], 'Asia/Hong_Kong')->utc());
+        }
+        if (!empty($filters['to'])) {
+            $query->where($column, '<', CarbonImmutable::parse($filters['to'], 'Asia/Hong_Kong')->addDay()->utc());
+        }
+    }
+
+    public function inventory(Request $request)
     {
         StaffAccess::allow('admin', 'reception', 'doctor');
         $branch = StaffAccess::branch();
+        $filters = $this->ledgerFilters($request, [
+            'herb_filter' => 'nullable|string|max:100', 'movement_kind' => 'nullable|in:receive,dispense',
+        ]);
         $stocks = DB::table('herbal_stocks')->where('branch_id', $branch)->orderBy('herb')->get();
-        $movements = DB::table('herbal_movements as m')->join('herbal_stocks as s', 's.id', '=', 'm.stock_id')
-            ->where('s.branch_id', $branch)->select('m.*', 's.herb')->orderByDesc('m.id')->paginate(25);
-        return view('commerce.inventory', compact('stocks', 'movements') + ['encounters' => $this->encounters($branch)->get()]);
+        $query = DB::table('herbal_movements as m')->join('herbal_stocks as s', 's.id', '=', 'm.stock_id')
+            ->where('s.branch_id', $branch);
+        if (isset($filters['herb_filter']) && $filters['herb_filter'] !== '') $query->where('s.herb', $filters['herb_filter']);
+        if (!empty($filters['movement_kind'])) $query->where('m.kind', $filters['movement_kind']);
+        $this->ledgerPeriod($query, 'm.created_at', $filters);
+        $movements = $query->select('m.*', 's.herb')->orderByDesc('m.id')->paginate(25)->appends($filters);
+        $encounters = $this->encounters($branch)->get();
+        $patients = Patient::whereIn('id', $encounters->pluck('patient_id'))->get()->keyBy('id');
+        return view('commerce.inventory', compact('stocks', 'movements', 'filters', 'encounters', 'patients'));
     }
 
     public function move(Request $request)
@@ -76,14 +110,28 @@ class CommerceController
         return redirect('/staff/inventory')->with('status', '已記錄庫存變動。');
     }
 
-    public function pos()
+    public function pos(Request $request)
     {
         StaffAccess::allow('admin', 'reception');
         $branch = StaffAccess::branch();
+        $filters = $this->ledgerFilters($request, [
+            'reference' => 'nullable|string|max:36', 'method' => 'nullable|in:cash,card,fps,other',
+        ]);
         $encounters = $this->encounters($branch)
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('receipts as r')->whereColumn('r.encounter_id', 'e.id'))->get();
-        $receipts = DB::table('receipts')->where('branch_id', $branch)->orderByDesc('id')->paginate(25);
-        return view('commerce.pos', compact('encounters', 'receipts'));
+        $query = DB::table('receipts as r')->join('appointments as a', 'a.id', '=', 'r.appointment_id')
+            ->where('r.branch_id', $branch);
+        if (isset($filters['reference']) && $filters['reference'] !== '') {
+            $reference = trim($filters['reference']);
+            $query->where(fn ($q) => $q->where('r.reference', $reference)->orWhere('a.reference', $reference)
+                ->when(ctype_digit($reference), fn ($q) => $q->orWhere('r.id', $reference)));
+        }
+        if (!empty($filters['method'])) $query->where('r.method', $filters['method']);
+        $this->ledgerPeriod($query, 'r.created_at', $filters);
+        $totalCents = (clone $query)->sum('r.amount_cents');
+        $receipts = $query->select('r.*', 'a.reference as booking')->orderByDesc('r.id')->paginate(25)->appends($filters);
+        $patients = Patient::whereIn('id', $encounters->pluck('patient_id')->merge($receipts->pluck('patient_id')))->get()->keyBy('id');
+        return view('commerce.pos', compact('encounters', 'receipts', 'filters', 'totalCents', 'patients'));
     }
 
     public function collect(Request $request)

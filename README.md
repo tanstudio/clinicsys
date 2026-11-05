@@ -56,6 +56,13 @@ Only the current local review installation has a generated head-office login in 
 The credential file is excluded from version control and sits outside the web root.
 The authenticated /staff/api/appointments endpoint supports patient_id, reference and after_id query parameters.
 
+The POS screen identifies pending encounters by patient name and appointment time.
+Filter issued receipts by receipt number, full receipt or booking reference, Hong Kong date range and payment method.
+The displayed receipt total covers all matching pages.
+Filter inventory movements by exact herb name, operation and Hong Kong date range without changing the displayed current stock.
+The report screen exports the selected branches and dates as a UTF-8 CSV containing all six summary measures.
+CSV ratios with no denominator remain blank, and spreadsheet formula prefixes in branch names are escaped.
+
 ## Notifications and privacy review
 
 Run `php artisan schedule:work` in a separate local process or run `php artisan schedule:run` each minute under deployment supervision.
@@ -76,4 +83,5 @@ node tests/booking.mjs
 node tests/booking-management.mjs
 node tests/staff-roles.mjs
 node tests/clinical-form.mjs
+node tests/operations-browser.mjs
 ```

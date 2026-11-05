@@ -17,6 +17,7 @@ class OperationsReportController
             'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d',
             'branch' => 'nullable|integer|exists:branches,id',
             'metric' => 'nullable|in:revenue,utilization,repeat,usage,usage_rate,efficiency',
+            'format' => 'nullable|in:csv',
         ]);
         $today = CarbonImmutable::today('Asia/Hong_Kong');
         $from = CarbonImmutable::parse($data['from'] ?? $today->startOfMonth()->toDateString(), 'Asia/Hong_Kong');
@@ -78,6 +79,30 @@ class OperationsReportController
                 'usage_rate' => ($supply[$id] ?? 0) > 0 ? ($usageTotals[$id] ?? 0) * 100 / $supply[$id] : null,
                 'efficiency' => $capacity ? $completed / ($capacity * 0.5) : null,
             ];
+        }
+        if (($data['format'] ?? null) === 'csv') {
+            return response()->streamDownload(function () use ($from, $to, $branches, $summary, $metrics) {
+                $stream = fopen('php://output', 'w');
+                fwrite($stream, "\xEF\xBB\xBF");
+                $write = static function (array $row) use ($stream) {
+                    // Prevent user-controlled branch names from becoming spreadsheet formulas.
+                    $row = array_map(static fn ($value) => is_string($value) && preg_match('/^(?:\s*[=+@-]|[\t\r\n])/u', $value)
+                        ? "'".$value : $value, $row);
+                    fputcsv($stream, $row, ',', '"', '');
+                };
+                $write(['開始日期（香港）', '結束日期（香港）', '分店', ...array_map(fn ($m) => $m[0].'（'.$m[1].'）', $metrics)]);
+                foreach ($summary as $id => $row) {
+                    $values = [];
+                    foreach ($metrics as $key => $label) {
+                        $values[] = $row[$key] === null ? '' : number_format($row[$key], $key === 'usage' ? 3 : 2, '.', '');
+                    }
+                    $write([$from->toDateString(), $to->toDateString(), $branches[$id], ...$values]);
+                }
+                fclose($stream);
+            }, 'clinic-report-'.$from->format('Ymd').'-'.$to->format('Ymd').'.csv', [
+                'Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
         }
         return view('commerce.reports', compact('from', 'to', 'branch', 'branches', 'summary', 'counts', 'metrics', 'metric', 'doctors', 'usage'));
     }

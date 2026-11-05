@@ -84,6 +84,7 @@ try {
     }
 
     $commerce = new CommerceController();
+    $get = fn ($path, $data = []) => Request::create('/staff/'.$path, 'GET', $data);
     $movement = ['reference' => (string) Str::uuid(), 'kind' => 'receive', 'herb' => 'QA', 'grams' => '10.001'];
     $post = fn ($path, $data) => Request::create('/staff/'.$path, 'POST', $data);
     $commerce->move($post('inventory', $movement));
@@ -99,8 +100,10 @@ try {
     denied(fn () => $commerce->move($post('inventory', ['reference' => (string) Str::uuid(), 'encounter_id' => $encounters['other']] + $dispense)), RecordNotFoundException::class);
     $stock = DB::table('herbal_stocks')->where('branch_id', $branch)->sole();
     check($stock->milligrams == 10876 && DB::table('herbal_movements')->where('stock_id', $stock->id)->count() === 4, 'Stock balance or ledger mismatch');
-    check(str_contains($commerce->inventory()->render(), '10.876'), 'Inventory page did not show actual stock');
-    check(str_contains($commerce->pos()->render(), '確認收款及簽發收據'), 'Open encounter missing');
+    check(str_contains($commerce->inventory($get('inventory'))->render(), '10.876'), 'Inventory page did not show actual stock');
+    $pos = $commerce->pos($get('pos'));
+    check(str_contains($pos->render(), '確認收款及簽發收據'), 'Open encounter missing');
+    check($pos->getData()['patients'][$patient->id]->name === 'QA' && $pos->getData()['encounters']->first()->starts_at, 'Missing patient or appointment context');
     $events = [];
     Event::listen('clinic.receipt.paid', function ($id) use (&$events) { $events[] = $id; });
     $payment = ['encounter_id' => $encounters['visited'], 'description' => 'QA visit', 'amount' => '123.45', 'method' => 'cash'];
@@ -118,19 +121,63 @@ try {
     check(abs($rows[$branch]['usage_rate'] - 312.5 / 14.001) < 0.00001, 'Inventory usage denominator mismatch');
     check($rows[$branch]['repeat'] == 50 && abs($rows[$branch]['utilization'] - 60) < 0.00001, 'Incorrect repeat or booking rate');
     check(abs($rows[$branch]['efficiency'] - 1.2) < 0.00001 && str_contains($view->render(), '<meter'), 'Efficiency or report chart failed');
+    $ledgerFilters = ['from' => $today->toDateString(), 'to' => $today->toDateString()];
+    foreach ([$receipt->reference, (string)$receipt->id, DB::table('appointments')->where('id', $receipt->appointment_id)->value('reference')] as $reference) {
+        $filtered = $commerce->pos($get('pos', ['reference' => $reference, 'method' => 'cash'] + $ledgerFilters))->getData();
+        check($filtered['receipts']->total() === 1 && (int)$filtered['totalCents'] === 12345, 'Receipt reference/date/method mismatch');
+    }
+    foreach ([['reference'=>'%'], ['reference'=>'0'], ['method'=>'fps']] as $filter) {
+        $filtered = $commerce->pos($get('pos', $filter))->getData();
+        check($filtered['receipts']->total() === 0 && (int)$filtered['totalCents'] === 0, 'Receipt empty filter mismatch');
+    }
+    $filteredStock = $commerce->inventory($get('inventory', ['herb_filter'=>'QA','movement_kind'=>'dispense'] + $ledgerFilters))->getData();
+    check($filteredStock['movements']->total() === 1 && $filteredStock['movements']->first()->reference === $dispense['reference'], 'Inventory filters mismatch');
+    $emptyStock = $commerce->inventory($get('inventory', ['herb_filter'=>'0']))->getData();
+    check($emptyStock['movements']->total() === 0 && $emptyStock['stocks']->sole()->milligrams == 10876, 'Ledger filter altered visible stock');
+    denied(fn () => $commerce->pos($get('pos', ['from'=>'2026-12-02', 'to'=>'2026-12-01'])), ValidationException::class);
+    denied(fn () => $commerce->inventory($get('inventory', ['movement_kind'=>'invalid'])), ValidationException::class);
+    denied(fn () => $commerce->pos($get('pos', ['reference'=>['invalid']])), ValidationException::class);
+    DB::beginTransaction();
+    try {
+        $midnight = $today->copy()->startOfDay()->utc();
+        foreach ([[$midnight->copy()->subSecond(),0],[$midnight,1],[$midnight->copy()->addDay()->subSecond(),1],[$midnight->copy()->addDay(),0]] as [$at,$count]) {
+            DB::table('receipts')->where('id',$receipt->id)->update(['created_at'=>$at]);
+            DB::table('herbal_movements')->where('reference',$dispense['reference'])->update(['created_at'=>$at]);
+            check($commerce->pos($get('pos',$ledgerFilters))->getData()['receipts']->total() === $count, 'Receipt Hong Kong date boundary');
+            check($commerce->inventory($get('inventory',['movement_kind'=>'dispense']+$ledgerFilters))->getData()['movements']->total() === $count, 'Movement Hong Kong date boundary');
+        }
+    } finally { DB::rollBack(); }
+    $csv = $report($get('reports', ['format'=>'csv']+$filters));
+    ob_start(); $csv->sendContent(); $bytes = ob_get_clean();
+    check(str_starts_with($bytes,"\xEF\xBB\xBF") && $csv->headers->hasCacheControlDirective('no-store'), 'CSV encoding or private cache header');
+    $csvRows = array_map('str_getcsv', explode("\n",trim(substr($bytes,3))));
+    check(count($csvRows) === 2 && count($csvRows[0]) === 9, 'CSV shape');
+    check(array_slice($csvRows[1],3) === ['123.45','60.00','50.00','3.125','22.32','1.20'], 'CSV values differ from screen');
+    DB::beginTransaction();
+    try {
+        DB::table('branches')->where('id',$branch)->update(['name_zh'=>' =1+1']);
+        ob_start(); $report($get('reports',['format'=>'csv']+$filters))->sendContent(); $formulaCsv=ob_get_clean();
+        check(str_contains($formulaCsv,"' =1+1"), 'CSV branch formula was not escaped');
+    } finally { DB::rollBack(); }
     denied(fn () => $report(Request::create('/staff/reports', 'GET', ['branch' => $other] + $filters)), HttpException::class);
     staff($actors['other']);
+    check($commerce->pos($get('pos',['reference'=>$receipt->reference]))->getData()['receipts']->total() === 0, 'Cross-branch receipt search');
+    check($commerce->inventory($get('inventory',['herb_filter'=>'QA']))->getData()['movements']->total() === 0, 'Cross-branch inventory search');
     denied(fn () => $commerce->receipt($receipt->id), RecordNotFoundException::class);
     denied(fn () => $commerce->collect($post('pos', $payment)), RecordNotFoundException::class);
     $commerce->collect($post('pos', ['encounter_id' => $encounters['other'], 'amount' => '5'] + $payment));
     staff($actors['hq']);
     $hq = $report(Request::create('/staff/reports', 'GET', $filters))->getData()['summary'];
     check($hq[$branch]['revenue'] + $hq[$other]['revenue'] == 128.45, 'Consolidated revenue failed');
+    ob_start(); $report($get('reports',['format'=>'csv','branch'=>$other]+$filters))->sendContent(); $scopedCsv=ob_get_clean();
+    $scopedRows=array_map('str_getcsv',explode("\n",trim(substr($scopedCsv,3))));
+    check(count($scopedRows)===2 && $scopedRows[1][2]===$name.'B' && $scopedRows[1][3]==='5.00' && $scopedRows[1][7]==='', 'HQ scoped CSV or missing-denominator behavior');
     staff($actors['hr']);
-    denied(fn () => $commerce->inventory(), HttpException::class);
-    denied(fn () => $commerce->pos(), HttpException::class);
+    denied(fn () => $commerce->inventory($get('inventory')), HttpException::class);
+    denied(fn () => $commerce->pos($get('pos')), HttpException::class);
+    denied(fn () => $report($get('reports',['format'=>'csv'])), HttpException::class);
     denied(fn () => $report(Request::create('/staff/reports')), HttpException::class);
-    echo "PASS stock movements, duplicate and overdraft protection, linked payments, cross-branch and role enforcement, metric denominators, HQ revenue, chart and four rendered views\n";
+    echo "PASS stock/payment integrity, patient context, ledger filters, four Hong Kong date boundaries, empty results, branch/role isolation, six CSV measures, formula escaping, null ratios and HQ exports\n";
 } finally {
     DB::rollBack();
 }
