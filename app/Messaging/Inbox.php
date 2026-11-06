@@ -122,9 +122,9 @@ class Inbox
         }
         $text = preg_replace('/^((?:BOOK|預約)[+]?)@\d+/iu', '$1', $text);
         if (preg_match('/^(?:BOOK|預約)([+]?)\s+(\d+)\s+(.+)$/iu', $text, $match)) {
-            $input = ['whatsapp_opt_in' => $match[1] === '+', 'slot_id' => $match[2], 'name' => $match[3], 'phone' => Str::after($data['phone'], '+852')];
-            if (!Str::startsWith($data['phone'], '+852') || Validator::make($input, CreateAppointment::RULES)->fails()) {
-                return '請使用香港電話及有效姓名，或聯絡職員。Use a Hong Kong number and a valid name or contact reception.';
+            $input = ['whatsapp_opt_in' => $match[1] === '+', 'slot_id' => $match[2], 'name' => $match[3], 'phone' => $data['phone']];
+            if (Validator::make($input, CreateAppointment::RULES)->fails()) {
+                return '請使用香港或中國內地手機號碼及有效姓名，或聯絡職員。Use a Hong Kong or mainland China mobile number and a valid name, or contact reception.';
             }
             $booking = app(CreateAppointment::class)->book($input, null, (int) $data['branch_id']);
             if ($booking) {

@@ -40,6 +40,13 @@ Embed the public slot selector with an iframe pointing at /embed or /embed?lang=
 The embedded selector opens a first-party checkout so patient sessions work with third-party cookies disabled.
 Appointments created before browser ownership was introduced require reception assistance.
 
+Patient booking supports Hong Kong (+852) and mainland China (+86) mobile numbers.
+The patient form offers a region selector.
+Reception can enter an eight-digit Hong Kong number or the full +852/+86 number.
+API clients may keep sending eight-digit Hong Kong numbers or use the supported international form.
+Existing Hong Kong patient identity hashes remain unchanged.
+Number-format support does not prove that a number owns a WhatsApp account or that a provider can deliver to it.
+
 Open http://127.0.0.1:18765/staff for the staff portal.
 Use the interactive account command from an authorised host to create credentials.
 A head-office administrator can select a branch and view consolidated reporting.
@@ -84,4 +91,16 @@ node tests/booking-management.mjs
 node tests/staff-roles.mjs
 node tests/clinical-form.mjs
 node tests/operations-browser.mjs
+php tests/patient-phone.php
+php tests/privacy-rendering.php
+CLINIC_TEST_PHONE_REGION=86 php tests/messaging.php
+node tests/patient-phone.mjs
 ```
+
+Run `bash tests/smtp-mailbox.sh` for actual local SMTP delivery using disposable MySQL and Mailpit containers.
+Run `bash tests/recovery.sh` for the empty-head-office checks and a synthetic database restore drill.
+The recovery script creates a disposable MySQL container and a temporary application key.
+It compares all restored rows and decrypts patient details, clinical records and HR attachments.
+The application stores HR attachment bytes in MySQL, so they are included in the database dump.
+The script never restores over the local development database or a production database.
+This drill does not configure production backup retention, scheduling or key custody.

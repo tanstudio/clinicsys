@@ -8,7 +8,7 @@
 <body x-data="booking" data-reference="{{ $appointment->reference ?? '' }}" data-expected-slot="{{ $appointment->slot_id ?? '' }}">
 <header><div class="wrap nav"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M0 10h10V0h12v10h10v12H22v10H10V22H0z"/></svg><b x-text="t('brand')">中醫門診</b></div><div class="nav-actions"><a :href="'/appointments/manage?lang='+lang" @if($embed ?? false) target="_blank" rel="noopener" @endif x-text="t('manage')"></a><button class="language" @click="toggle" x-text="lang==='zh'?'English':'繁體中文'">English</button></div></div></header>
 <main class="wrap">
-<div class="hero">@include('patient-calendar-icon')<div><h1 x-text="t(phase===3?(moving?'changed':'done'):(moving?'move':'title'))">線上預約</h1><p x-text="t(phase===3?'receipt':(moving?'moveIntro':'intro'))"></p>@isset($originalTime)<p class="original" x-show="phase!==3"><strong x-text="t('original')"></strong> · {{ substr($originalTime,0,16) }}</p>@endisset</div><span class="sample" x-text="t('sample')"></span></div>
+<div class="hero">@include('patient-calendar-icon')<div><h1 x-text="t(phase===3?(moving?'changed':'done'):(moving?'move':'title'))">線上預約</h1><p x-text="t(phase===3?'receipt':(moving?'moveIntro':'intro'))"></p>@isset($originalTime)<p class="original" x-show="phase!==3"><strong x-text="t('original')"></strong> · {{ substr($originalTime,0,16) }}</p>@endisset</div>@if(app()->environment('local', 'testing'))<span class="sample" x-text="t('sample')"></span>@endif</div>
 <div class="layout" x-cloak>
 <section>
 <div class="notice" role="alert" x-show="error" x-text="error?t(error):''"></div>
@@ -33,7 +33,8 @@
 </div>
 <div x-show="phase===2"><h2><small>03</small><span x-text="t('details')"></span></h2>
 <form @submit.prevent="confirm"><label><span x-text="t('name')"></span><input x-model.trim="name" autocomplete="name" required maxlength="100"></label>
-<label><span x-text="t('phone')"></span><div class="tel"><b>+852</b><input x-model="phone" autocomplete="tel-national" type="tel" inputmode="numeric" pattern="[2-9][0-9]{7}" maxlength="8" required></div></label>
+<label><span x-text="t('region')"></span><select x-model="country"><option value="852" x-text="t('hongKong')"></option><option value="86" x-text="t('mainland')"></option></select></label>
+<label><span x-text="t(country==='86'?'mainlandPhone':'phone')"></span><div class="tel"><b x-text="'+'+country"></b><input x-model.trim="phone" autocomplete="tel-national" type="tel" inputmode="numeric" :pattern="country==='86'?'1[3-9][0-9]{9}':'[2-9][0-9]{7}'" :maxlength="country==='86'?11:8" required></div></label>
 <label><span x-text="t('email')"></span><input x-model.trim="email" type="email" maxlength="254" autocomplete="email"></label>
 <p><a :href="'/privacy?lang='+lang" target="_blank" rel="noopener" x-text="t('privacy')"></a></p>
 <label class="opt-in"><input type="checkbox" x-model="whatsapp"><span x-text="t('whatsapp')"></span></label>
