@@ -13,7 +13,7 @@ try {
     const page = await browser.newPage({viewport:{width,height:860}});
     page.on('pageerror', e=>errors.push(e.message));
     await page.goto(base);
-    const selects = page.locator('select');
+    const selects = page.locator('.filters select');
     await page.locator('.times button').first().waitFor();
     await selects.nth(0).selectOption({index:1});
     await selects.nth(1).selectOption({index:1});

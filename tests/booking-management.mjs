@@ -21,7 +21,13 @@ try {
   await frame.getByRole('link',{name:'Continue on the clinic website'}).click();
   const page = await opened;
   await page.getByLabel('Patient name').fill(name);
-  await page.getByLabel('Hong Kong phone number').fill('91234567');
+  await page.getByLabel('Phone region').selectOption('86');
+  await page.getByLabel('Mainland China mobile number').fill('13800138000');
+  await page.getByRole('button',{name:'繁體中文'}).click();
+  assert.equal(await page.getByLabel('電話地區').inputValue(),'86');
+  assert.equal(await page.getByLabel('中國內地手機號碼').inputValue(),'13800138000');
+  await page.getByRole('button',{name:'English',exact:true}).click();
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth));
   await page.getByLabel('Email (optional)').fill('qa@example.invalid');
   const notice = page.getByRole('link',{name:'Personal data collection notice (opens in a new tab)'});
   assert.equal(await notice.getAttribute('href'), '/privacy?lang=en');
@@ -62,10 +68,13 @@ try {
   assert.equal(again.status(),201);
   replacement = (await again.json()).reference;
   assert.equal((await stranger.request.get(base+'/appointments/'+reference+'/move')).status(),404);
-  console.log('PASS cross-site iframe handoff, encrypted email submission, same-browser management, foreign-session denial, reference-preserving move, cancellation and released-slot rebooking');
+  console.log('PASS +86 mobile booking, region/language persistence, cross-site iframe handoff, encrypted email submission, same-browser management, foreign-session denial, reference-preserving move, cancellation and released-slot rebooking');
 } finally {
   await browser.close();
   await new Promise(resolve=>host.close(resolve));
   if (replacement) execFileSync('php',['tests/check-history.php',name+'-new',replacement]);
-  if (reference) execFileSync('php',['tests/check-history.php',name,reference]);
+  if (reference) {
+    const history=JSON.parse(execFileSync('php',['tests/check-history.php',name,reference],{encoding:'utf8'}));
+    assert.equal(history.phone,'+8613800138000');
+  }
 }

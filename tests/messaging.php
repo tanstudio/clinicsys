@@ -47,7 +47,9 @@ try {
         $slots[] = DB::table('slots')->insertGetId(['branch_id'=>$branch,'practitioner_id'=>$doctor,'service_id'=>$base->service_id,
             'starts_at'=>today('Asia/Hong_Kong')->addDays($offset)->setHour(14)]);
     }
-    $phone = '+8529'.random_int(1000000,9999999);
+    $phone = getenv('CLINIC_TEST_PHONE_REGION') === '86'
+        ? '+86138'.random_int(10000000,99999999)
+        : '+8529'.random_int(1000000,9999999);
     $payload = ['phone'=>$phone,'branch_id'=>$branch];
     $incoming = fn ($text,$id=null) => app(Inbox::class)->receive($payload + ['text'=>$text,'message_id'=>$id ?? (string) Str::uuid()]);
     $route = app('router')->getRoutes()->match(Request::create('/webhooks/sleekflow','POST'));

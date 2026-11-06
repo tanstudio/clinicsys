@@ -66,7 +66,7 @@
 <form method="post" action="/staff/schedule/slots/{{ $s->id }}">@csrf<input type="hidden" name="state" value="{{ $s->closed_at ? 'open' : 'closed' }}"><button>{{ $s->closed_at ? '重新開放時段' : '關閉時段' }}</button></form>
 @if(!$s->closed_at && $s->starts_at < $now->copy()->startOfDay()->addDays(14)->toDateTimeString())
 <details><summary>代患者預約</summary><form method="post" action="/staff/schedule/book">@csrf<input type="hidden" name="slot_id" value="{{ $s->id }}">
-<label>患者姓名 <input name="name" maxlength="100" required></label><label>香港聯絡電話 <input name="phone" type="tel" pattern="[2-9][0-9]{7}" required></label>
+<label>患者姓名 <input name="name" maxlength="100" required></label><label>聯絡電話 <input name="phone" type="tel" maxlength="14" required aria-describedby="phone-help-{{ $s->id }}"></label><small id="phone-help-{{ $s->id }}">香港：8 位數字或 +852；中國內地：+86 後接 11 位手機號碼。</small>
 <label>電郵（選填） <input type="email" name="email" maxlength="254"></label><label><input type="checkbox" value="1" name="whatsapp_opt_in"> 患者已同意接收此預約的 WhatsApp 確認、更改、提醒、付款通知及診後意見邀請。</label><button>確認預約</button></form></details>
 @endif
 @endif
