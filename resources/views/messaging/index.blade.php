@@ -3,6 +3,7 @@
 @section('content')
 <header class="module-heading"><span class="module-tile">@include('staff.icon', ['module'=>'inbox'])</span><h1>訊息收件匣</h1></header>
 <nav>@if(\App\Support\StaffAccess::hq())<a href="?scope=all">全線分店對話</a> · @endif<a href="?">分店對話</a> · <a href="?queue=open">待跟進</a> · <a href="?queue=mine">指派給我</a></nav>
+@if(\App\Support\StaffAccess::hq())<p><a href="/staff/whatsapp">WhatsApp 通道與通知範本</a></p>@endif
 <div class="sheet-scroll"><table><thead><tr><th>分店</th><th>聯絡電話</th><th>類別</th><th>負責職員</th><th>狀態</th><th>最近更新</th></tr></thead><tbody>
 @forelse($threads as $t)<tr><td>{{ $branches[$t->branch_id] }}</td><td><a href="/staff/inbox/{{ $t->id }}">{{ \Illuminate\Support\Facades\Crypt::decryptString($t->phone) }}</a></td><td>{{ $t->category }}</td><td>{{ $t->agent_name ?? '未指派' }}</td><td>{{ $t->status }}</td><td>{{ $t->updated_at }}</td></tr>
 @empty<tr><td colspan="6">此佇列尚無對話。</td></tr>@endforelse
@@ -10,7 +11,7 @@
 @include('messaging.pages',['page'=>$threads])
 @if(\App\Support\StaffAccess::role() === 'admin')
 <h2>關鍵字分流和自動回覆</h2>
-<p>依建立順序套用第一條符合的規則。輸入相同關鍵字可更新現有規則。</p>
+<p>依建立順序套用第一條符合的規則。用 | 分隔同義問法，例如「營業時間|幾點開門|opening hours」。指派職員後暫停自動接待；未命中的問題轉交職員。</p>
 @foreach($rules as $r)
 <form method="post" action="/staff/inbox/rules/{{ $r->id }}/delete">@csrf <strong>{{ $r->keyword }}</strong> · {{ $r->category }} · {{ $agents[$r->assignee_id] ?? '未指派' }} · {{ $r->reply }} <button>刪除</button></form>
 @endforeach

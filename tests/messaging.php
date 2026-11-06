@@ -19,26 +19,31 @@ use Illuminate\Support\Str;
 require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
+set_exception_handler(function (Throwable $e) { fwrite(STDERR,$e->getMessage().PHP_EOL); exit(1); });
 if (!$app->environment('local','testing')) exit(1);
 function verify(bool $ok, string $message): void {
     if (!$ok) throw new RuntimeException($message);
 }
 $secret = Str::random(48);
-config(['clinic_messaging.flow_url'=>'https://flow.example.test/trigger', 'clinic_messaging.flow_headers'=>['X-Test-Trigger'=>'fixture'],
-    'clinic_messaging.inbound_token'=>$secret, 'clinic_messaging.email_enabled'=>true, 'mail.default'=>'smtp',
+config(['clinic_messaging.whatsapp'=>['access_token'=>$secret,'phone_number_id'=>'123456789','graph_version'=>'v23.0'],
+    'clinic_messaging.email_enabled'=>true, 'mail.default'=>'smtp',
     'mail.mailers.smtp'=>['transport'=>'array'], 'mail.from'=>['address'=>'clinic@example.test','name'=>'Clinic']]);
 $requests = [];
 $limited = 0;
 Http::preventStrayRequests();
 Http::fake(function (OutgoingRequest $r) use (&$requests, &$limited) {
-    verify($r->url() === 'https://flow.example.test/trigger' && $r->hasHeader('X-Test-Trigger','fixture'), 'Invalid Flow request');
+    verify($r->url() === 'https://graph.facebook.com/v23.0/123456789/messages' && $r->hasHeader('Authorization'), 'Invalid Meta request');
     $requests[] = $r->data();
-    if ($r['body'] === 'limited' && !$limited++) return Http::response([],429,['Retry-After'=>60]);
-    if ($r['body'] === 'unknown') return Http::response([],503);
-    return Http::response([],202);
+    if (($r['text']['body'] ?? null) === 'limited' && !$limited++) return Http::response([],429,['Retry-After'=>60]);
+    if (($r['text']['body'] ?? null) === 'unknown') return Http::response([],503);
+    return Http::response(['messages'=>[['id'=>'wamid.'.Str::uuid()]]],200);
 });
 DB::beginTransaction();
 try {
+    foreach (\App\Messaging\CloudWhatsApp::KINDS as $kind=>$label) {
+        DB::table('whatsapp_templates')->updateOrInsert(['kind'=>$kind],['name'=>'clinic_'.$kind,'language'=>'en_US',
+            'parameters'=>json_encode(\App\Messaging\CloudWhatsApp::PARAMETERS[$kind]),'approved'=>true]);
+    }
     $base = DB::table('slots')->firstOrFail();
     $branch = DB::table('branches')->insertGetId(['name_zh'=>(string) Str::uuid(),'name_en'=>'Messaging QA']);
     $doctor = DB::table('practitioners')->insertGetId(['name_zh'=>(string) Str::uuid(),'name_en'=>'Messaging QA']);
@@ -52,16 +57,12 @@ try {
         : '+8529'.random_int(1000000,9999999);
     $payload = ['phone'=>$phone,'branch_id'=>$branch];
     $incoming = fn ($text,$id=null) => app(Inbox::class)->receive($payload + ['text'=>$text,'message_id'=>$id ?? (string) Str::uuid()]);
-    $route = app('router')->getRoutes()->match(Request::create('/webhooks/sleekflow','POST'));
-    $invoke = function ($token) use ($app,$route,$payload) {
-        $req = Request::create('/webhooks/sleekflow','POST', $payload + ['message_id'=>'test-'.Str::uuid(),'text'=>'Hello']);
-        $req->headers->set('Authorization','Bearer '.$token);
-        return $app->call($route->getAction('uses'), ['request'=>$req]);
-    };
-    try { $invoke('invalid'); throw new RuntimeException('Invalid token accepted'); }
-    catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { verify($e->getStatusCode()===401,'Expected unauthorized'); }
-    verify($invoke($secret)->getData()->route === 'triage','New enquiry should reach triage');
+    $resume = fn () => DB::table('message_threads')->where('branch_id',$branch)->update(['automation_paused'=>false,'assignee_id'=>null]);
+    verify($incoming('Unknown question') === 'human','Unknown enquiry should reach reception');
+    $resume();
     verify($incoming('human')==='human','No handoff');
+    verify($incoming('HELP')==='human','Human handoff did not pause automation');
+    $resume();
     verify($incoming('HELP')==='local','Missing FAQ');
     DB::table('message_rules')->insert(['branch_id'=>$branch,'keyword'=>'hours','category'=>'hours','reply'=>'Open by appointment']);
     $id=(string) Str::uuid();
@@ -74,6 +75,7 @@ try {
     verify(DB::table('message_entries')->where('thread_id',$thread->id)->where('direction','inbound')->exists(),'Booking transcript not linked');
     $incoming('Follow up');
     verify(DB::table('message_entries')->where('thread_id',$thread->id)->where('direction','inbound')->count()===2,'Verified contact routing mismatch');
+    $resume();
     $booking->update(['email'=>'qa@example.test']);
     $queue=app(NotificationQueue::class); $delivery=app(Delivery::class);
     $queue->collect(); $queue->collect();
@@ -106,7 +108,8 @@ try {
     verify(DB::table('message_entries')->where('appointment_id',$second->id)->where('kind','confirmed')->value('status')==='suppressed','No opt-in honored');
     $incoming('Shared number');
     $unlinked=DB::table('message_threads')->where('branch_id',$branch)->whereNull('patient_id')->sole();
-    verify(Crypt::decryptString(DB::table('message_entries')->where('thread_id',$unlinked->id)->latest('id')->value('body'))==='Shared number','Ambiguous number linked');
+    verify(Crypt::decryptString(DB::table('message_entries')->where('thread_id',$unlinked->id)->where('direction','inbound')->latest('id')->value('body'))==='Shared number','Ambiguous number linked');
+    $resume();
     $incoming('BOOK+ '.$slots[3].' Receipt QA');
     $paid = Appointment::whereSlotId($slots[3])->sole();
     $visit=DB::table('encounters')->insertGetId(['appointment_id'=>$paid->id,'patient_id'=>$paid->patient_id,
@@ -116,6 +119,8 @@ try {
     $queue->collect(); $queue->collect(); $delivery->consume();
     $entries=DB::table('message_entries')->where('appointment_id',$paid->id);
     verify((clone $entries)->where('kind','payment')->where('status','accepted')->count()===1,'No payment notice');
+    verify((bool)array_filter($requests,fn($r)=>($r['template']['name'] ?? null)==='clinic_payment'
+        && ($r['template']['components'][0]['parameters'][1]['text'] ?? null)==='HKD 125.00'),'Payment template amount mismatch');
     verify((clone $entries)->where('kind','feedback')->where('status','queued')->where('due_at','>',now()->addHours(23))->count()===1,'No scheduled feedback');
     $controller = app(\App\Http\Controllers\InboxController::class);
     $account = function ($role,$branchId) use ($app) {
@@ -148,5 +153,5 @@ try {
     $index=$controller->index(Request::create('/staff/inbox?scope=all'))->getData();
     verify($index['threads']->contains('id',$thread->id),'HQ omitted another branch');
     verify($controller->show($thread->id)->getData()['thread']->id===$thread->id,'HQ cannot inspect branch thread');
-    echo "PASS messaging: tenant bearer authentication, duplicate callback, triage, FAQ, agent handoff, in-channel booking, consent, CRM, email and WhatsApp confirmations, reminders, reschedule, cancellation, payment, feedback, campaign opt-out, transport failures, assignment, branch isolation and HQ access. All transports faked.\n";
+    echo "PASS messaging: native Meta transport, duplicate messages, FAQ, persistent human handoff, in-channel booking, consent, CRM, email and WhatsApp confirmations, reminders, reschedule, cancellation, payment, feedback, opt-out, transport failures, assignment, branch isolation and HQ access. All transports faked.\n";
 } finally { DB::rollBack(); }

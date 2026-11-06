@@ -59,9 +59,11 @@ class InboxController
     public function assign(Request $request, int $id)
     {
         $thread = $this->thread($id);
-        $data = $request->validate(['assignee_id'=>'nullable|integer', 'status'=>'required|in:open,closed', 'category'=>'required|string|max:80']);
+        $data = $request->validate(['assignee_id'=>'nullable|integer', 'status'=>'required|in:open,closed', 'category'=>'required|string|max:80', 'automation_paused'=>'sometimes|boolean']);
         $this->checkAgent($thread->branch_id, $data['assignee_id'] ?? null);
+        $data['automation_paused'] = !empty($data['assignee_id']) || (bool)($data['automation_paused'] ?? $thread->automation_paused);
         DB::table('message_threads')->where('id', $id)->update($data + ['updated_at'=>now()]);
+        if ($data['automation_paused']) Inbox::pauseAutomatedReplies($id);
         return back()->with('status','已更新對話');
     }
 
@@ -108,6 +110,7 @@ class InboxController
         $data = $request->validate(['keyword'=>'required|string|max:100','category'=>'required|string|max:80',
             'assignee_id'=>'nullable|integer','reply'=>'nullable|string|max:2000']);
         $this->checkAgent($branch, $data['assignee_id'] ?? null);
+        abort_unless(array_filter(array_map('trim',explode('|',$data['keyword']))),422,'Enter at least one non-empty keyword.');
         DB::table('message_rules')->updateOrInsert(['keyword'=>$data['keyword'],'branch_id'=>$branch], $data);
         return back()->with('status','已儲存分流規則');
     }
