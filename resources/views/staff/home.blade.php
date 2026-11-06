@@ -10,6 +10,7 @@
 <div class="portal-index">
 @if(\App\Support\StaffAccess::hq())
 <a class="portal-item" href="/staff/branches"><span class="item-icon">@include('staff.icon', ['module'=>'branches'])</span><span class="item-text"><strong>分店管理</strong><small>查看分店名單及新增分店</small></span></a>
+<a class="portal-item" href="/staff/whatsapp"><span class="item-icon">@include('staff.icon', ['module'=>'inbox'])</span><span class="item-text"><strong>WhatsApp 設定</strong><small>Meta 通道、接待分店及通知範本</small></span></a>
 @endif
 @if(\App\Support\StaffAccess::can('admin'))
 @foreach(\App\Http\Controllers\DirectoryController::TITLES as $path=>$name)

@@ -10,6 +10,13 @@ use Illuminate\Support\Str;
 
 class Inbox
 {
+    public static function pauseAutomatedReplies(int $thread): void
+    {
+        DB::table('message_entries')->where('thread_id',$thread)->where('status','queued')
+            ->where('kind','reply')->where('event_key','like','reply:incoming:%')
+            ->update(['status'=>'suppressed','error'=>'automation_paused','updated_at'=>now()]);
+    }
+
     public static function thread(int $branch, string $phone, ?int $patient = null): object
     {
         $contact = hash_hmac('sha256', $phone, config('app.key'));
@@ -22,11 +29,12 @@ class Inbox
     }
 
     public static function enqueue(object $thread, string $key, string $kind, string $body, string $channel = 'whatsapp',
-        ?string $recipient = null, $due = null, ?int $event = null, ?int $appointment = null): void
+        ?string $recipient = null, $due = null, ?int $event = null, ?int $appointment = null, ?array $templateData = null): void
     {
         DB::table('message_entries')->insertOrIgnore([
             'thread_id' => $thread->id, 'event_key' => $key, 'direction' => 'outbound', 'channel' => $channel,
             'kind' => $kind, 'body' => Crypt::encryptString($body), 'recipient' => $recipient ? Crypt::encryptString($recipient) : null,
+            'template_data' => $templateData ? Crypt::encryptString(json_encode($templateData, JSON_THROW_ON_ERROR)) : null,
             'due_at' => $due ?? now(), 'status' => 'queued', 'appointment_event_id' => $event, 'appointment_id' => $appointment,
             'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -36,7 +44,7 @@ class Inbox
     public function receive(array $data): string
     {
         // A patient may select another public booking branch in the chat itself.
-        if (($data['direction'] ?? 'inbound') === 'inbound'
+        if (empty($data['stale']) && ($data['direction'] ?? 'inbound') === 'inbound'
             && preg_match('/^(BOOK|預約)([+]?)@(\d+)(?:\s|$)/iu', trim($data['text']), $selection)
             && DB::table('branches')->where('id',$selection[3])->exists()) {
             $data['branch_id'] = (int) $selection[3];
@@ -51,6 +59,7 @@ class Inbox
                 'thread_id' => $thread->id, 'event_key' => $key, 'direction' => $outbound ? 'outbound' : 'inbound', 'channel' => 'whatsapp',
                 'body' => Crypt::encryptString($text), 'status' => $outbound ? 'provider_recorded' : 'received', 'kind' => $outbound ? 'provider_reply' : 'message',
                 'due_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+                'provider_received_at' => $data['received_at'] ?? null,
             ]);
             if (!$inserted) {
                 return 'duplicate';
@@ -61,16 +70,27 @@ class Inbox
             }
             $updates = ['status' => 'open', 'updated_at' => now()];
             $reply = null;
-            $route = $thread->assignee_id ? 'human' : 'triage';
-            if (in_array(mb_strtoupper($text), ['START','STOP','訂閱','退訂'], true)) {
+            $paused = $thread->automation_paused || $thread->assignee_id;
+            $route = $paused ? 'human' : 'triage';
+            if (in_array(mb_strtoupper($text), ['START','STOP','訂閱','退訂'], true)
+                && (empty($data['stale']) || in_array(mb_strtoupper($text),['STOP','退訂'],true))) {
                 $allow = in_array(mb_strtoupper($text), ['START','訂閱'], true);
                 DB::table('message_consents')->upsert([['contact_key' => $thread->contact_key,
                     'marketing' => $allow, 'updated_at' => now()]], ['contact_key'], ['marketing','updated_at']);
                 $reply = $allow ? '已訂閱推廣訊息。Promotion subscription active. Reply STOP to unsubscribe.'
                     : '已取消訂閱推廣訊息。Promotion subscription cancelled.';
-            } elseif (in_array(mb_strtolower($text), ['human','agent','真人','職員'], true)) {
+            } elseif (!empty($data['stale'])) {
+                $route = 'human';
+                $updates['category'] = 'delayed_message';
+                $updates['automation_paused'] = true;
+            } elseif (!empty($data['force_handoff']) || in_array(mb_strtolower($text), ['human','agent','真人','職員'], true)) {
                 $route = 'human';
                 $updates['category'] = 'handoff';
+                $updates['automation_paused'] = true;
+                if (!$paused) $reply = '已通知職員跟進。Reception will follow up with you.';
+            } elseif ($paused) {
+                // Human ownership persists until reception explicitly resumes automation.
+                $route = 'human';
             } elseif (in_array(mb_strtoupper($text), ['BRANCHES','分店'], true)) {
                 $reply = DB::table('branches')->orderBy('id')->get()->map(fn ($b) => "BOOK@$b->id · $b->name_zh / $b->name_en")->implode("\n");
             } elseif (preg_match('/^(?:BOOK|預約)[+]?(?:@\d+)?(?:\s|$)/iu', $text)) {
@@ -79,21 +99,29 @@ class Inbox
                 DB::table('message_entries')->where('event_key',$key)->update(['thread_id'=>$thread->id]);
             } else {
                 $rule = DB::table('message_rules')->where('branch_id', $thread->branch_id)
-                    ->orderBy('id')->get()->first(fn ($r) => Str::contains(mb_strtolower($text), mb_strtolower($r->keyword)));
+                    ->orderBy('id')->get()->first(fn ($r) => Str::contains(mb_strtolower($text),
+                        array_values(array_filter(array_map('trim',explode('|',mb_strtolower($r->keyword)))))));
                 if ($rule) {
-                    $route = 'human';
+                    $route = $rule->assignee_id ? 'human' : 'local';
                     $updates['category'] = $rule->category;
                     $updates['assignee_id'] = $rule->assignee_id;
+                    $updates['automation_paused'] = (bool)$rule->assignee_id;
                     $reply = $rule->reply;
                 } elseif (in_array(mb_strtolower($text), ['help','faq','幫助','常見問題'], true)) {
                     $reply = '回覆「預約」查詢本分店時段，或留言予職員。Reply BOOK for appointments, or send your enquiry to reception.';
+                } else {
+                    $route = 'human';
+                    $updates['category'] = 'handoff';
+                    $updates['automation_paused'] = true;
+                    $reply = '已收到查詢，將由職員回覆。Your enquiry has been received. Reception will reply.';
                 }
             }
             DB::table('message_threads')->where('id', $thread->id)->update($updates);
+            if (!empty($updates['automation_paused'])) self::pauseAutomatedReplies($thread->id);
             if ($reply) {
-                self::enqueue($thread, "reply:$key", 'reply', $reply);
+                self::enqueue($thread, ($route === 'human' ? 'handoff:' : 'reply:').$key, 'reply', $reply);
             }
-            return $reply ? 'local' : $route;
+            return $route === 'human' ? 'human' : ($reply ? 'local' : $route);
         }, 3);
     }
 
