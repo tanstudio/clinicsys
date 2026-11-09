@@ -153,5 +153,15 @@ try {
     $index=$controller->index(Request::create('/staff/inbox?scope=all'))->getData();
     verify($index['threads']->contains('id',$thread->id),'HQ omitted another branch');
     verify($controller->show($thread->id)->getData()['thread']->id===$thread->id,'HQ cannot inspect branch thread');
+    // Timestamps are stored in UTC; the inbox must show Hong Kong time (UTC+8).
+    view()->share('errors', new Illuminate\Support\ViewErrorBag);
+    $shown = DB::table('message_entries')->where('thread_id',$thread->id)->orderByDesc('id')->value('id');
+    DB::table('message_entries')->where('id',$shown)->update(['created_at'=>'2026-01-02 07:15:00']);
+    // The list is ordered by updated_at, so a late date keeps this thread on page 1 of a populated database.
+    DB::table('message_threads')->where('id',$thread->id)->update(['updated_at'=>'2037-01-02 07:16:00']);
+    $threadHtml = $controller->show($thread->id)->render();
+    verify(str_contains($threadHtml,'2026-01-02 15:15') && !str_contains($threadHtml,'2026-01-02 07:15'),'Thread view did not show Hong Kong time');
+    $indexHtml = $controller->index(Request::create('/staff/inbox?scope=all'))->render();
+    verify(str_contains($indexHtml,'2037-01-02 15:16') && !str_contains($indexHtml,'2037-01-02 07:16'),'Inbox list did not show Hong Kong time');
     echo "PASS messaging: native Meta transport, duplicate messages, FAQ, persistent human handoff, in-channel booking, consent, CRM, email and WhatsApp confirmations, reminders, reschedule, cancellation, payment, feedback, opt-out, transport failures, assignment, branch isolation and HQ access. All transports faked.\n";
 } finally { DB::rollBack(); }
