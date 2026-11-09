@@ -16,16 +16,19 @@ use Illuminate\Support\Str;
 require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+set_exception_handler(function (Throwable $e) { fwrite(STDERR,$e->getMessage().PHP_EOL); exit(1); });
 if (!$app->environment('local', 'testing')) exit(1);
 function checkPhone(bool $ok, string $message): void {
     if (!$ok) throw new RuntimeException($message);
 }
 Http::preventStrayRequests();
-Http::fake(['https://phone.example.test/*' => Http::response([], 202)]);
-config(['clinic_messaging.flow_url'=>'https://phone.example.test/flow',
-    'clinic_messaging.flow_headers'=>['X-Test'=>'fixture'], 'clinic_messaging.email_enabled'=>false]);
+Http::fake(fn () => Http::response(['messages'=>[['id'=>'wamid.'.Str::uuid()]]],200));
+config(['clinic_messaging.whatsapp'=>['access_token'=>'test-token','phone_number_id'=>'123456789','graph_version'=>'v23.0'],
+    'clinic_messaging.email_enabled'=>false]);
 DB::beginTransaction();
 try {
+    DB::table('whatsapp_templates')->updateOrInsert(['kind'=>'confirmed'],['name'=>'clinic_confirmed','language'=>'zh_HK',
+        'parameters'=>'["reference","starts_at","branch_name"]','approved'=>true]);
     $base = DB::table('slots')->firstOrFail();
     $doctor = DB::table('practitioners')->insertGetId(['name_zh'=>(string)Str::uuid(),'name_en'=>'Phone QA']);
     $slots = [];
@@ -61,7 +64,9 @@ try {
     checkPhone(Appointment::whereSlotId($slots[4])->sole()->patient_id === $mainland->patient_id, 'WhatsApp creates duplicate mainland patient');
     app(NotificationQueue::class)->collect();
     app(Delivery::class)->consume();
-    checkPhone(Http::recorded(fn($r)=>$r['phone']===$cn['phone'] && $r['kind']==='confirmed' && str_contains($r['body'],$mainland->reference))->count()===1, 'Mainland notification recipient mismatch');
+    checkPhone(Http::recorded(fn($r)=>$r->url()==='https://graph.facebook.com/v23.0/123456789/messages'
+        && $r['to']===ltrim($cn['phone'],'+') && ($r['template']['name'] ?? null)==='clinic_confirmed'
+        && ($r['template']['components'][0]['parameters'][0]['text'] ?? null)===$mainland->reference)->count()===1, 'Mainland notification recipient mismatch');
     foreach (['13800138000','+8612800138000','+861380013800','+85213800138000','+6591234567','+8613800138000x', ['+8613800138000']] as $invalid) {
         $request->replace(array_replace($cn,['phone'=>$invalid,'slot_id'=>$slots[5]]));
         checkPhone(app(BookingController::class)->store($request,$create)->getStatusCode()===422,'Invalid number accepted');

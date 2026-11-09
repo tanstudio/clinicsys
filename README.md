@@ -74,8 +74,18 @@ CSV ratios with no denominator remain blank, and spreadsheet formula prefixes in
 
 Run `php artisan schedule:work` in a separate local process or run `php artisan schedule:run` each minute under deployment supervision.
 The worker projects appointment events, receipts and completed visits into the outbox.
-Configure a real provider only after setting the approved tenant, sender and consent settings.
-See [messaging setup](b1.reports/261104-messaging-integration.md) for SleekFlow mappings and SMTP configuration.
+WhatsApp connects directly to Meta Cloud API; SleekFlow is no longer used by the application.
+Configure the private WHATSAPP_* environment values and subscribe `/webhooks/whatsapp` in Meta.
+Head office manages the shared-number reception branch and seven text-body template mappings at `/staff/whatsapp`.
+The inbox provides branch routing, keyword synonyms, persistent human handoff and delivery receipts.
+Unknown questions go to reception; generative AI answers are not implemented.
+See [native WhatsApp setup and verification](b1.reports/261106-native-whatsapp.md) for credentials, supported message types and remaining live tests.
+Run `php artisan clinic:whatsapp-check` before connecting Meta.
+Use `--json` for a secret-free configuration report.
+The command checks 16 local prerequisites and never makes a Meta request.
+A passing result does not verify token permissions, template approval or handset delivery.
+See [Meta readiness and remaining live tests](b1.reports/261109-meta-readiness.md) for the current verification evidence.
+Email uses SMTP; the production Resend sender has been configured and accepted separately.
 See [privacy review](b1.reports/261104-privacy-controls.md) for verified technical measures and operator decisions.
 
 ## Verification
@@ -93,6 +103,8 @@ node tests/clinical-form.mjs
 node tests/operations-browser.mjs
 php tests/patient-phone.php
 php tests/privacy-rendering.php
+php tests/whatsapp-cloud.php
+node tests/whatsapp-browser.mjs
 CLINIC_TEST_PHONE_REGION=86 php tests/messaging.php
 node tests/patient-phone.mjs
 ```

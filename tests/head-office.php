@@ -35,6 +35,7 @@ try {
     visit('POST','/staff/login',['email'=>$user['email'],'password'=>'test-only-fixture'],302);
     if (!str_contains(visit('GET','/staff',[],200), '分店管理')) throw new RuntimeException('Missing headquarters entry');
     visit('GET','/staff/branches',[],200);
+    if (!str_contains(visit('GET','/staff/whatsapp',[],200), '請先')) throw new RuntimeException('Empty HQ cannot configure WhatsApp');
     visit('GET','/staff/inventory',[],302);
     foreach (['First','Second','First'] as $name) {
         visit('POST','/staff/branches',['name_zh'=>$name,'name_en'=>$name],302);
@@ -59,6 +60,7 @@ try {
     visit('GET','/staff/login',[],200);
     visit('POST','/staff/login',['email'=>$user['email'],'password'=>'test-only-fixture'],302);
     visit('GET','/staff/branches',[],403);
+    visit('GET','/staff/whatsapp',[],403);
     visit('POST','/staff/branches',['name_zh'=>'Denied','name_en'=>'Denied'],403);
     foreach (['practitioners','services'] as $type) {
         $base='/staff/'.$type;

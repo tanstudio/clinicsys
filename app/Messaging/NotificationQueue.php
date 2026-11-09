@@ -36,6 +36,7 @@ class NotificationQueue
             return;
         }
         $eventId = null;
+        $parameters = [];
         $due = now();
         if ($source === 'appointment_events') {
             $eventId = $row->id;
@@ -55,10 +56,12 @@ class NotificationQueue
             };
             $body .= " · $appointment->reference · $slot->starts_at (Hong Kong)";
             $branch = $slot->branch_id;
+            $parameters = ['reference'=>$appointment->reference,'starts_at'=>$slot->starts_at.' (Hong Kong)'];
         } elseif ($source === 'receipts') {
             $kind = 'payment';
             $branch = $row->branch_id;
             $body = "已收款 / Payment received · HKD ".number_format($row->amount_cents / 100, 2)." · $row->reference";
+            $parameters = ['reference'=>$row->reference,'amount'=>'HKD '.number_format($row->amount_cents / 100, 2)];
         } else {
             $kind = 'feedback';
             $branch = $row->branch_id;
@@ -68,7 +71,8 @@ class NotificationQueue
         $patient = Patient::findOrFail($appointment->patient_id);
         $thread = Inbox::thread($branch, $patient->phone, $patient->id);
         $key = "$source:$row->id";
-        Inbox::enqueue($thread, "$key:wa", $kind, $body, 'whatsapp', null, $due, $eventId, $appointment->id);
+        $parameters['branch_name'] = DB::table('branches')->where('id',$branch)->value('name_zh');
+        Inbox::enqueue($thread, "$key:wa", $kind, $body, 'whatsapp', null, $due, $eventId, $appointment->id, $parameters);
         if ($appointment->email && $kind !== 'feedback') {
             Inbox::enqueue($thread, "$key:email", $kind, $body, 'email', $appointment->email, $due, $eventId, $appointment->id);
         }
@@ -77,7 +81,7 @@ class NotificationQueue
             // A booking made within 24 hours receives its confirmation immediately.
             if ($remind->greaterThanOrEqualTo(CarbonImmutable::parse($row->created_at, config('app.timezone')))) {
                 $reminder = "預約提示 / Appointment reminder · $slot->starts_at (Hong Kong) · $appointment->reference";
-                Inbox::enqueue($thread, "$key:reminder", 'reminder', $reminder, 'whatsapp', null, $remind, $eventId, $appointment->id);
+                Inbox::enqueue($thread, "$key:reminder", 'reminder', $reminder, 'whatsapp', null, $remind, $eventId, $appointment->id, $parameters);
                 if ($appointment->email) {
                     Inbox::enqueue($thread, "$key:email-reminder", 'reminder', $reminder, 'email', $appointment->email, $remind, $eventId, $appointment->id);
                 }

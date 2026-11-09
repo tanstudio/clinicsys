@@ -5,7 +5,6 @@ namespace App\Messaging;
 use App\Models\Appointment;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 
 class Delivery
@@ -36,6 +35,11 @@ class Delivery
     private function deliver(object $entry): void
     {
         $thread = DB::table('message_threads')->find($entry->thread_id);
+        if ($entry->kind === 'reply' && str_starts_with($entry->event_key,'reply:incoming:')
+            && ($thread->automation_paused || $thread->assignee_id)) {
+            $this->finish($entry,'suppressed','automation_paused');
+            return;
+        }
         if ($entry->appointment_event_id && DB::table('appointment_events')->where('appointment_id',$entry->appointment_id)
             ->max('id') != $entry->appointment_event_id) {
             $this->finish($entry, 'superseded');
@@ -56,12 +60,12 @@ class Delivery
         }
         if ($entry->kind === 'reply' && !DB::table('message_entries as e')->join('message_threads as t','t.id','=','e.thread_id')
             ->where('t.contact_key',$thread->contact_key)->where('t.branch_id',$thread->branch_id)
-            ->where('e.direction','inbound')->where('e.created_at','>',now()->subDay())->exists()) {
+            ->where('e.direction','inbound')->whereRaw('COALESCE(e.provider_received_at,e.created_at) > ?', [now()->subDay()])->exists()) {
             $this->finish($entry,'suppressed','outside_service_window');
             return;
         }
-        $body = Crypt::decryptString($entry->body);
         try {
+            $body = Crypt::decryptString($entry->body);
             if ($entry->channel === 'email') {
                 if (!config('clinic_messaging.email_enabled') || config('mail.default') !== 'smtp') {
                     $this->finish($entry,'unconfigured','smtp_required');
@@ -69,29 +73,15 @@ class Delivery
                 }
                 Mail::raw($body, fn ($m) => $m->to(Crypt::decryptString($entry->recipient))->subject('Clinic · 診所通知'));
             } else {
-                $url = config('clinic_messaging.flow_url');
-                $headers = config('clinic_messaging.flow_headers');
-                if (!$url || parse_url($url, PHP_URL_SCHEME) !== 'https' || !$headers || !is_array($headers)) {
-                    $this->finish($entry,'unconfigured','sleekflow_required');
-                    return;
-                }
-                $response = Http::withHeaders($headers)->withoutRedirecting()->asJson()->timeout(8)->post($url, [
-                    'event_id' => $entry->event_key, 'phone' => Crypt::decryptString($thread->phone), 'kind' => $entry->kind,
-                    'body' => $body, 'branch_id' => $thread->branch_id,
-                ]);
-                if ($response->status() === 429 && $entry->attempts < 4) {
-                    $delay = min(3600, max(60, (int) $response->header('Retry-After')));
-                    $this->finish($entry, 'queued', 'rate_limited', now()->addSeconds($delay));
-                    return;
-                }
-                if (!$response->successful()) {
-                    $this->finish($entry, $response->serverError() ? 'review' : 'failed', 'HTTP_'.$response->status());
-                    return;
-                }
+                $result = app(CloudWhatsApp::class)->send($entry, $thread, $body);
+                $this->finish($entry,$result['status'],$result['error'] ?? null,$result['due'] ?? null);
+                return;
             }
             $this->finish($entry, 'accepted');
+        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+            $this->finish($entry, 'review', 'encrypted_payload_invalid');
         } catch (\Throwable $e) {
-            // Neither SMTP nor a Flow Builder trigger guarantees remote de-duplication.
+            // A timeout can follow provider acceptance; require review before retrying.
             $this->finish($entry, 'review', 'delivery_unknown');
         }
     }
