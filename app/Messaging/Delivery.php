@@ -64,8 +64,8 @@ class Delivery
             $this->finish($entry,'suppressed','outside_service_window');
             return;
         }
-        $body = Crypt::decryptString($entry->body);
         try {
+            $body = Crypt::decryptString($entry->body);
             if ($entry->channel === 'email') {
                 if (!config('clinic_messaging.email_enabled') || config('mail.default') !== 'smtp') {
                     $this->finish($entry,'unconfigured','smtp_required');
@@ -78,6 +78,8 @@ class Delivery
                 return;
             }
             $this->finish($entry, 'accepted');
+        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+            $this->finish($entry, 'review', 'encrypted_payload_invalid');
         } catch (\Throwable $e) {
             // A timeout can follow provider acceptance; require review before retrying.
             $this->finish($entry, 'review', 'delivery_unknown');

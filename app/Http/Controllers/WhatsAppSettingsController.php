@@ -40,7 +40,7 @@ class WhatsAppSettingsController
         $this->authorize();
         $data = $request->validate([
             'kind'=>['required',Rule::in(array_keys(CloudWhatsApp::KINDS))],
-            'name'=>['required','string','max:512','regex:/^[a-z0-9_]+$/D'],
+            'name'=>['required','string','max:255','regex:/^[a-z0-9_]+$/D'],
             'language'=>['required','string','max:20','regex:/^[a-z]{2,3}(?:_[A-Z]{2})?$/D'],
             'parameters'=>'nullable|string|max:200','approved'=>'required|boolean',
         ]);

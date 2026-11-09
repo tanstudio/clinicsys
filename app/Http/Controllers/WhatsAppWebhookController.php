@@ -23,6 +23,7 @@ class WhatsAppWebhookController
 
     public function receive(Request $request, Inbox $inbox, CloudWhatsApp $cloud)
     {
+        abort_if(strlen($request->getContent()) > 1048576,413);
         $secret = config('clinic_messaging.whatsapp.app_secret');
         $signature = $request->header('X-Hub-Signature-256');
         abort_unless(is_string($secret) && strlen($secret)>=16 && is_string($signature)
@@ -69,11 +70,12 @@ class WhatsAppWebhookController
                         $route = DB::table('whatsapp_routes')->where('contact_key',$contact)->lockForUpdate()->first();
                         $target = $route->branch_id;
                         $latest = !$route->last_received_at || $received->greaterThanOrEqualTo($route->last_received_at);
-                        if ($latest && $supported && preg_match('/^(BOOK|預約)[+]?@(\d+)(?:\s|$)/iu',trim($text),$selection)
+                        $stale = !$latest || $received->lessThanOrEqualTo(now()->subDay());
+                        if (!$stale && $supported && preg_match('/^(BOOK|預約)[+]?@(\d+)(?:\s|$)/iu',trim($text),$selection)
                             && DB::table('branches')->where('id',$selection[2])->exists()) $target = (int)$selection[2];
                         $result = $inbox->receive(['branch_id'=>(int)$target,'phone'=>'+'.$message['from'],
                             'message_id'=>$message['id'], 'text'=>$supported ? $text : '收到非文字訊息，待職員跟進。Non-text message received; staff follow-up required.',
-                            'force_handoff'=>!$supported,'received_at'=>$received,'stale'=>!$latest || $received->lessThanOrEqualTo(now()->subDay()),
+                            'force_handoff'=>!$supported,'received_at'=>$received,'stale'=>$stale,
                         ]);
                         if ($latest && $result !== 'duplicate') DB::table('whatsapp_routes')->where('contact_key',$contact)
                             ->update(['branch_id'=>$target,'last_received_at'=>$received]);

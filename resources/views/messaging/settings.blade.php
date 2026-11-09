@@ -26,7 +26,7 @@
 <details><summary>{{ $label }} · {{ $template?->approved ? '已啟用' : '未啟用' }}</summary>
 <form method="post" action="/staff/whatsapp/templates" aria-label="{{ $label }}範本">@csrf
 <input type="hidden" name="kind" value="{{ $kind }}">
-<label>Meta 範本名稱 <input name="name" value="{{ $template?->name }}" pattern="[a-z0-9_]+" required maxlength="512"></label>
+<label>Meta 範本名稱 <input name="name" value="{{ $template?->name }}" pattern="[a-z0-9_]+" required maxlength="255"></label>
 <label>語言代碼 <input name="language" value="{{ $template?->language }}" placeholder="例如 zh_HK" required maxlength="20"></label>
 <label>內文變數順序 <input name="parameters" value="{{ $template ? implode(',',json_decode($template->parameters,true)) : '' }}" maxlength="200"></label>
 <small>此通知可用：{{ implode(', ', $parameters[$kind]) }}。固定文字範本可留空。</small>

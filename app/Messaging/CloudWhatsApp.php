@@ -74,13 +74,14 @@ class CloudWhatsApp
         $id = $receipt['id'] ?? null;
         $status = $receipt['status'] ?? null;
         $phone = $receipt['recipient_id'] ?? null;
-        if (!is_string($id) || !is_string($phone) || !preg_match('/^[1-9][0-9]{7,14}$/D',$phone)
+        if (!is_string($id) || $id === '' || strlen($id)>255 || !is_string($phone) || !preg_match('/^[1-9][0-9]{7,14}$/D',$phone)
             || !in_array($status,['sent','delivered','read','failed'],true)) return;
         DB::transaction(function () use ($receipt,$id,$status,$phone) {
             $entry = DB::table('message_entries')->where('channel','whatsapp')->where('direction','outbound')
                 ->where(function ($q) use ($receipt,$id) {
                     $q->where('provider_message_id',$id);
-                    if (isset($receipt['biz_opaque_callback_data']) && is_string($receipt['biz_opaque_callback_data'])) {
+                    if (isset($receipt['biz_opaque_callback_data']) && is_string($receipt['biz_opaque_callback_data'])
+                        && Str::isUuid($receipt['biz_opaque_callback_data'])) {
                         $q->orWhere('provider_reference',$receipt['biz_opaque_callback_data']);
                     }
                 })->lockForUpdate()->first();

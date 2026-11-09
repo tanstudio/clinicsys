@@ -81,6 +81,34 @@ try {
     $post($payload(['messages'=>[$message('STOP',null,time()+7)]]));
     $post($payload(['messages'=>[$message('START',null,time()-86401)]]));
     checkCloud(!DB::table('message_consents')->where('contact_key',$otherThread->contact_key)->value('marketing'),'Delayed START overwrote opt-out');
+    // A fresh contact must not change branches with an expired selection.
+    $delayed=$message('BOOK@'.$other,null,time()-86401);
+    $delayed['from']='8528'.random_int(1000000,9999999);
+    checkCloud($post($payload(['messages'=>[$delayed]]))->getStatusCode()===200,'Expired branch selection rejected');
+    $contact=hash_hmac('sha256','+'.$delayed['from'],config('app.key'));
+    checkCloud((int)DB::table('whatsapp_routes')->where('contact_key',$contact)->value('branch_id')===$branch,'Expired selection changed reception branch');
+    checkCloud(!DB::table('message_threads')->where('contact_key',$contact)->where('branch_id',$other)->exists(),'Expired selection created foreign thread');
+    // Rules must not assign an inactive, moved or unauthorized account.
+    $agent=DB::table('staff_accounts')->insertGetId(['name'=>'Rule QA','email'=>Str::uuid().'@example.test','password_hash'=>'fixture','branch_id'=>$other,'role'=>'reception','active'=>false]);
+    DB::table('message_rules')->insert(['branch_id'=>$other,'keyword'=>'route-test','category'=>'routing','assignee_id'=>$agent,'reply'=>'Reception will follow up.']);
+    foreach ([['active'=>false],['active'=>true,'branch_id'=>$branch],['active'=>true,'branch_id'=>$other,'role'=>'doctor']] as $attributes) {
+        DB::table('staff_accounts')->where('id',$agent)->update($attributes);
+        DB::table('message_threads')->where('id',$otherThread->id)->update(['automation_paused'=>false,'assignee_id'=>null]);
+        app(Inbox::class)->receive(['branch_id'=>$other,'phone'=>'+'.$waPhone,'message_id'=>'rule:'.Str::uuid(),'text'=>'route-test']);
+        $routed=DB::table('message_threads')->find($otherThread->id);
+        checkCloud($routed->assignee_id===null && $routed->automation_paused,'Invalid rule assignee did not fall back to human queue');
+    }
+    // Replying directly takes human ownership even without an explicit assignment.
+    DB::table('staff_accounts')->where('id',$agent)->update(['role'=>'reception']);
+    $staffRequest=Request::create('/','POST',['body'=>'Staff reply','request_id'=>(string)Str::uuid()]);
+    $staffRequest->setLaravelSession(app('session')->driver('array'));
+    $staffRequest->session()->put('staff_id',$agent); $app->instance('request',$staffRequest);
+    DB::table('message_threads')->where('id',$otherThread->id)->update(['automation_paused'=>false]);
+    Inbox::enqueue($otherThread,'reply:incoming:'.Str::uuid(),'reply','Pending bot answer');
+    app(\App\Http\Controllers\InboxController::class)->reply($staffRequest,$otherThread->id);
+    checkCloud((bool)DB::table('message_threads')->where('id',$otherThread->id)->value('automation_paused'),'Direct staff reply left bot active');
+    checkCloud(!DB::table('message_entries')->where('thread_id',$otherThread->id)->where('status','queued')->where('event_key','like','reply:incoming:%')->exists(),'Direct staff reply left pending bot replies');
+    checkCloud(DB::table('message_entries')->where('event_key','staff:'.$otherThread->id.':'.$staffRequest->input('request_id'))->value('status')==='queued','Staff reply was suppressed');
     $calls=[];
     fakeCloud(function ($request) use (&$calls,$config) {
         checkCloud($request->url()==='https://graph.facebook.com/v23.0/123456789/messages','Unexpected provider destination');
@@ -137,6 +165,37 @@ try {
     Inbox::enqueue($otherThread,'cloud-malformed:'.Str::uuid(),'feedback','Malformed acknowledgement');
     app(Delivery::class)->consume();
     checkCloud(DB::table('message_entries')->where('thread_id',$otherThread->id)->latest('id')->value('status')==='review','Malformed provider success treated as acceptance');
+    fakeCloud(fn()=>Http::response(['messages'=>[['id'=>'wamid.after-corrupt']]],200));
+    $corruptKey='cloud-corrupt:'.Str::uuid();
+    Inbox::enqueue($otherThread,$corruptKey,'feedback','Unreadable encrypted payload');
+    DB::table('message_entries')->where('event_key',$corruptKey)->update(['body'=>'invalid-ciphertext']);
+    Inbox::enqueue($otherThread,'cloud-after-corrupt:'.Str::uuid(),'feedback','Healthy next message');
+    app(Delivery::class)->consume();
+    checkCloud(DB::table('message_entries')->where('event_key',$corruptKey)->value('error')==='encrypted_payload_invalid','Corrupt message did not enter review');
+    checkCloud(DB::table('message_entries')->where('provider_message_id','wamid.after-corrupt')->value('status')==='accepted','Corrupt message blocked later delivery');
+    $healthy=DB::table('message_entries')->where('provider_message_id','wamid.after-corrupt')->first();
+    foreach (['',str_repeat('x',256)] as $badId) {
+        app(CloudWhatsApp::class)->receipt(['id'=>$badId,'recipient_id'=>$waPhone,'status'=>'read','biz_opaque_callback_data'=>$healthy->provider_reference]);
+        checkCloud(DB::table('message_entries')->where('id',$healthy->id)->value('status')==='accepted','Invalid receipt ID changed delivery state');
+    }
+    fakeCloud(fn()=>Http::response([],429,['Retry-After'=>'120']));
+    $retryKey='cloud-rate:'.Str::uuid();
+    Inbox::enqueue($otherThread,$retryKey,'feedback','Rate limited');
+    app(Delivery::class)->consume();
+    $limited=DB::table('message_entries')->where('event_key',$retryKey)->first();
+    checkCloud($limited->status==='queued' && $limited->error==='rate_limited' && strtotime($limited->due_at)>time(),'Rate limit not delayed');
+    DB::table('message_entries')->where('id',$limited->id)->update(['attempts'=>4,'due_at'=>now()]);
+    app(Delivery::class)->consume();
+    checkCloud(DB::table('message_entries')->where('id',$limited->id)->value('status')==='failed','Rate limit retried without bound');
+    foreach ([500,400] as $status) {
+        fakeCloud(fn()=>Http::response([], $status));
+        $failureKey='cloud-http:'.Str::uuid();
+        Inbox::enqueue($otherThread,$failureKey,'feedback','HTTP failure');
+        app(Delivery::class)->consume();
+        checkCloud(DB::table('message_entries')->where('event_key',$failureKey)->value('status')===($status===500?'review':'failed'),'HTTP failure incorrectly retried');
+    }
+    $large=$http('/webhooks/whatsapp','POST',str_repeat('x',1048577));
+    checkCloud($large->getStatusCode()===413,'Oversized callback accepted');
     config(['clinic_messaging.whatsapp.access_token'=>null]);
     $attempts=Http::recorded()->count();
     Inbox::enqueue($otherThread,'cloud-no-token:'.Str::uuid(),'feedback','Missing credential');
@@ -158,8 +217,52 @@ try {
     $save=Request::create('/','POST',['kind'=>'confirmed','name'=>'clinic_confirmed','language'=>'zh_HK','parameters'=>'reference,starts_at,branch_name','approved'=>1]);
     $settings->template($save);
     checkCloud(json_decode(DB::table('whatsapp_templates')->where('kind','confirmed')->value('parameters'),true)===['reference','starts_at','branch_name'],'Template UI mapping not saved');
+    $longName=clone $save;
+    $longName->merge(['name'=>str_repeat('a',256)]);
+    try {$settings->template($longName); throw new RuntimeException('Oversized template name accepted');}
+    catch (Illuminate\Validation\ValidationException $e) {checkCloud(isset($e->errors()['name']),'Wrong template length denial');}
     $save->merge(['parameters'=>'clinical_record']);
     try {$settings->template($save); throw new RuntimeException('Invalid template field accepted');}
     catch (Symfony\Component\HttpKernel\Exception\HttpException $e) {checkCloud($e->getStatusCode()===422,'Wrong template denial');}
+    // Exercise the signed webhook through CRM, projection and transport for both regions.
+    $base=DB::table('slots')->firstOrFail();
+    $doctor=DB::table('practitioners')->insertGetId(['name_zh'=>'端到端測試','name_en'=>'Webhook journey QA']);
+    DB::table('message_entries')->where('status','queued')->update(['due_at'=>now()->addDays(30)]);
+    fakeCloud(fn()=>Http::response(['messages'=>[['id'=>'wamid.'.Str::uuid()]]],200));
+    foreach (['8529'.random_int(1000000,9999999),'86138'.random_int(10000000,99999999)] as $offset=>$number) {
+        $slot=DB::table('slots')->insertGetId(['branch_id'=>$branch,'practitioner_id'=>$doctor,'service_id'=>$base->service_id,'starts_at'=>today('Asia/Hong_Kong')->addDays(2)->setHour(14+$offset)]);
+        $bookingMessage=$message('BOOK+@'.$branch.' '.$slot.' Webhook QA'); $bookingMessage['from']=$number;
+        $event=$payload(['messages'=>[$bookingMessage]]);
+        checkCloud($post($event)->getStatusCode()===200,'Signed booking callback failed');
+        $booking=\App\Models\Appointment::whereSlotId($slot)->sole();
+        checkCloud((bool)$booking->whatsapp_opt_in,'Booking consent missing');
+        checkCloud(\App\Models\Patient::findOrFail($booking->patient_id)->phone==='+'.$number,'Webhook patient phone mismatch');
+        checkCloud($post($event)->getStatusCode()===200 && \App\Models\Appointment::whereSlotId($slot)->count()===1,'Webhook replay duplicated booking');
+        app(\App\Messaging\NotificationQueue::class)->collect();
+        app(Delivery::class)->consume();
+        $notice=DB::table('message_entries')->where('appointment_id',$booking->id)->where('kind','confirmed')->sole();
+        checkCloud($notice->status==='accepted','Webhook booking notification was not accepted');
+        checkCloud($post($payload(['statuses'=>[['id'=>$notice->provider_message_id,'status'=>'delivered','recipient_id'=>$number]]]))->getStatusCode()===200
+            && DB::table('message_entries')->where('id',$notice->id)->value('status')==='delivered','Webhook booking receipt not reconciled');
+        $due=DB::table('message_entries')->where('appointment_id',$booking->id)->where('kind','reminder')->sole();
+        checkCloud($due->status==='queued' && strtotime($due->due_at)>time(),'Webhook reminder not scheduled');
+    }
+    foreach (CloudWhatsApp::KINDS as $kind=>$label) DB::table('whatsapp_templates')->updateOrInsert(['kind'=>$kind],
+        ['name'=>'clinic_'.$kind,'language'=>'zh_HK','parameters'=>json_encode(CloudWhatsApp::PARAMETERS[$kind]),'approved'=>true]);
+    config(['app.url'=>'https://clinic.example.test']);
+    $ready=app(\App\Messaging\WhatsAppReadiness::class);
+    $checksResult=$ready->checks();
+    checkCloud(count($checksResult)===16 && collect($checksResult)->every('passed',true),'Complete local configuration did not pass preflight');
+    checkCloud(\Illuminate\Support\Facades\Artisan::call('clinic:whatsapp-check',['--json'=>true])===0,'Preflight CLI failed');
+    $output=\Illuminate\Support\Facades\Artisan::output();
+    $decoded=json_decode($output,true,512,JSON_THROW_ON_ERROR);
+    checkCloud($decoded['passed']===16 && $decoded['total']===16 && $decoded['live_verified']===false,'Preflight claimed live verification');
+    checkCloud(!str_contains($output,$config['access_token']) && !str_contains($output,$config['app_secret']) && !str_contains($output,$config['verify_token']),'Preflight leaked credentials');
+    config(['clinic_messaging.whatsapp.verify_token'=>'short']);
+    DB::table('whatsapp_settings')->where('id',1)->update(['default_branch_id'=>null]);
+    DB::table('whatsapp_templates')->where('kind','marketing')->update(['parameters'=>'{"wrong":"body"}']);
+    checkCloud(\Illuminate\Support\Facades\Artisan::call('clinic:whatsapp-check',['--json'=>true])===1,'Incomplete configuration passed preflight');
+    $missing=collect($ready->checks())->where('passed',false)->pluck('check')->all();
+    checkCloud($missing===['verify_token','reception_branch','template_marketing'],'Preflight did not identify exact blockers');
     echo "PASS WhatsApp Cloud: $checks/$checks checks; signed HTTP callbacks, deduplication, branch continuity, handoff, synonyms, delayed consent, Meta payloads, templates, delivery races, expiry and HQ settings. All HTTP transports faked.\n";
 } finally { DB::rollBack(); }

@@ -88,7 +88,12 @@ class InboxController
     {
         $thread = $this->thread($id);
         $data = $request->validate(['body'=>'required|string|max:2000','request_id'=>'required|uuid']);
-        Inbox::enqueue($thread, "staff:$id:".$data['request_id'], 'reply', $data['body']);
+        DB::transaction(function () use ($thread,$id,$data) {
+            DB::table('message_threads')->where('id',$id)->lockForUpdate()->firstOrFail();
+            DB::table('message_threads')->where('id',$id)->update(['automation_paused'=>true,'updated_at'=>now()]);
+            Inbox::pauseAutomatedReplies($id);
+            Inbox::enqueue($thread, "staff:$id:".$data['request_id'], 'reply', $data['body']);
+        },3);
         return back()->with('status','回覆已排程');
     }
 

@@ -104,7 +104,9 @@ class Inbox
                 if ($rule) {
                     $route = $rule->assignee_id ? 'human' : 'local';
                     $updates['category'] = $rule->category;
-                    $updates['assignee_id'] = $rule->assignee_id;
+                    $updates['assignee_id'] = $rule->assignee_id && DB::table('staff_accounts')
+                        ->where('id',$rule->assignee_id)->where('branch_id',$thread->branch_id)
+                        ->where('active',true)->whereIn('role',['admin','reception'])->exists() ? $rule->assignee_id : null;
                     $updates['automation_paused'] = (bool)$rule->assignee_id;
                     $reply = $rule->reply;
                 } elseif (in_array(mb_strtolower($text), ['help','faq','幫助','常見問題'], true)) {
@@ -132,7 +134,7 @@ class Inbox
         if ($linked->pluck('patient_id')->unique()->count() === 1) {
             foreach ($linked as $known) {
                 if (DB::table('message_entries')->where('thread_id',$known->id)->where('direction','inbound')->exists()) {
-                    return $known;
+                    return DB::table('message_threads')->where('id',$known->id)->lockForUpdate()->firstOrFail();
                 }
             }
         }
