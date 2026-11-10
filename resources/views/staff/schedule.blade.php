@@ -2,7 +2,7 @@
 @section('title', '分店排班')
 @section('content')
 @push('styles')
-<link rel="stylesheet" href="/staff-schedule.css">
+<link rel="stylesheet" href="{{ \App\Support\Asset::url('staff-schedule.css') }}">
 @endpush
 @php
     $day = \Carbon\CarbonImmutable::parse($date, 'Asia/Hong_Kong');

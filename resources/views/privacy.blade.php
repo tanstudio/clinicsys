@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>預約資料用途 · Booking information</title><link rel="stylesheet" href="/staff.css"></head>
+<!doctype html><html lang="zh-HK"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>預約資料用途 · Booking information</title><link rel="stylesheet" href="{{ \App\Support\Asset::url('staff.css') }}"></head>
 <body><main class="portal-frame portal-main" style="max-width:760px">
 <a href="/">返回預約 · Back to booking</a>
 <h1>預約資料用途</h1>
