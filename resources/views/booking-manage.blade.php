@@ -1,5 +1,5 @@
 <!doctype html><html lang="{{ $en ? 'en' : 'zh-HK' }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ $en ? 'My appointments' : '我的預約' }}</title><link rel="stylesheet" href="/booking.css"></head><body>
+<title>{{ $en ? 'My appointments' : '我的預約' }}</title><link rel="stylesheet" href="{{ \App\Support\Asset::url('booking.css') }}"></head><body>
 <header><div class="wrap nav"><a href="/?lang={{ $en ? 'en' : 'zh' }}">{{ $en ? 'Book a visit' : '線上預約' }}</a><a href="?lang={{ $en ? 'zh' : 'en' }}">{{ $en ? '繁體中文' : 'English' }}</a></div></header>
 <main class="wrap"><div class="hero">@include('patient-calendar-icon')<div><h1>{{ $en ? 'My appointments' : '我的預約' }}</h1><p>{{ $en ? 'Appointments booked in this browser session. All times are in Hong Kong time.' : '顯示此瀏覽器工作階段內建立的預約。時間為香港時間。' }}</p></div></div>
 @if(session('booking_status'))
