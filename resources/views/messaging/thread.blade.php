@@ -20,8 +20,9 @@
 <input type="hidden" name="request_id" value="{{ \Illuminate\Support\Str::uuid() }}">
 <label>WhatsApp 回覆 <textarea name="body" required maxlength="2000"></textarea></label><button>排程回覆</button></form>
 <h2>記錄</h2>
+<p>香港時間</p>
 @forelse($entries as $e)
-<article><p><strong>{{ $e->direction === 'inbound' ? '收到' : '發出' }} · {{ $e->channel }}</strong> {{ $e->created_at }} · {{ $e->kind }} · {{ ['queued'=>'等待發送','sending'=>'發送中','accepted'=>'平台已接受','sent'=>'已發送','delivered'=>'已送達','read'=>'已讀','failed'=>'發送失敗','review'=>'需核對發送結果','unconfigured'=>'通道或範本未設定','suppressed'=>'已停止發送','superseded'=>'已被最新通知取代','received'=>'已收到'][$e->status] ?? $e->status }}</p>
+<article><p><strong>{{ $e->direction === 'inbound' ? '收到' : '發出' }} · {{ $e->channel }}</strong> {{ \Illuminate\Support\Carbon::parse($e->created_at, 'UTC')->tz('Asia/Hong_Kong')->format('Y-m-d H:i') }} ·{{ $e->kind }} · {{ ['queued'=>'等待發送','sending'=>'發送中','accepted'=>'平台已接受','sent'=>'已發送','delivered'=>'已送達','read'=>'已讀','failed'=>'發送失敗','review'=>'需核對發送結果','unconfigured'=>'通道或範本未設定','suppressed'=>'已停止發送','superseded'=>'已被最新通知取代','received'=>'已收到'][$e->status] ?? $e->status }}</p>
 <p style="white-space:pre-wrap">{{ \Illuminate\Support\Facades\Crypt::decryptString($e->body) }}</p>
 @if($e->error)<small>{{ $e->error }}</small>@endif
 @if(\App\Support\StaffAccess::role() === 'admin' && in_array($e->status,['failed','review','unconfigured']))

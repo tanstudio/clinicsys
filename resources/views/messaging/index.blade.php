@@ -4,8 +4,8 @@
 <header class="module-heading"><span class="module-tile">@include('staff.icon', ['module'=>'inbox'])</span><h1>訊息收件匣</h1></header>
 <nav>@if(\App\Support\StaffAccess::hq())<a href="?scope=all">全線分店對話</a> · @endif<a href="?">分店對話</a> · <a href="?queue=open">待跟進</a> · <a href="?queue=mine">指派給我</a></nav>
 @if(\App\Support\StaffAccess::hq())<p><a href="/staff/whatsapp">WhatsApp 通道與通知範本</a></p>@endif
-<div class="sheet-scroll"><table><thead><tr><th>分店</th><th>聯絡電話</th><th>類別</th><th>負責職員</th><th>狀態</th><th>最近更新</th></tr></thead><tbody>
-@forelse($threads as $t)<tr><td>{{ $branches[$t->branch_id] }}</td><td><a href="/staff/inbox/{{ $t->id }}">{{ \Illuminate\Support\Facades\Crypt::decryptString($t->phone) }}</a></td><td>{{ $t->category }}</td><td>{{ $t->agent_name ?? '未指派' }}</td><td>{{ $t->status }}</td><td>{{ $t->updated_at }}</td></tr>
+<div class="sheet-scroll"><table><thead><tr><th>分店</th><th>聯絡電話</th><th>類別</th><th>負責職員</th><th>狀態</th><th>最近更新（香港時間）</th></tr></thead><tbody>
+@forelse($threads as $t)<tr><td>{{ $branches[$t->branch_id] }}</td><td><a href="/staff/inbox/{{ $t->id }}">{{ \Illuminate\Support\Facades\Crypt::decryptString($t->phone) }}</a></td><td>{{ $t->category }}</td><td>{{ $t->agent_name ?? '未指派' }}</td><td>{{ $t->status }}</td><td>{{ \Illuminate\Support\Carbon::parse($t->updated_at, 'UTC')->tz('Asia/Hong_Kong')->format('Y-m-d H:i') }}</td></tr>
 @empty<tr><td colspan="6">此佇列尚無對話。</td></tr>@endforelse
 </tbody></table></div>
 @include('messaging.pages',['page'=>$threads])
