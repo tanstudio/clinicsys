@@ -1,82 +1,201 @@
-:root{--blue:#002fa7;--line:#ccd0d6;--ink:#191b20;--muted:#505662;color:var(--ink);font:16px/1.55 "Helvetica Neue",Helvetica,"PingFang HK",sans-serif;font-variant-numeric:tabular-nums}*{box-sizing:border-box}body{margin:0;background:white}.portal-frame{width:min(1280px,92%);margin:auto}.portal-top{border-bottom:1px solid var(--line)}.portal-bar,.portal-tools,.portal-tools form{display:flex;align-items:center;gap:12px}.portal-bar{min-height:72px;justify-content:space-between;flex-wrap:wrap;padding:10px 0}.portal-brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--ink);font-size:20px;font-weight:700}.portal-brand svg{width:26px;color:var(--blue)}.portal-tools{flex-wrap:wrap;font-size:14px}.portal-tools label{display:inline}.portal-main{padding:30px 0 60px}.portal-main h1{margin:16px 0 30px;font-size:clamp(32px,4vw,56px);letter-spacing:-.045em;line-height:1.16}.portal-main h2{margin:28px 0 12px}.portal-crumb{font-size:14px}.portal-index{border-top:2px solid var(--ink);display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.portal-item{display:grid;padding:22px 8px 22px 0;border-bottom:1px solid var(--line);text-decoration:none}.portal-item strong{font-size:22px}.portal-item span{color:var(--muted);font-size:14px}.portal-login{display:grid;max-width:400px;gap:16px}.portal-login label{display:grid;gap:6px}.portal-login button{background:var(--blue);color:white}.portal-status{padding:12px 28px;border-left:3px solid var(--blue);background:#f7f7f8}a{color:var(--blue)}button,input,select,textarea{font:inherit;border:1px solid var(--line);padding:7px 10px;background:white;max-width:100%}button{cursor:pointer;color:var(--blue);font-weight:550}button:hover{border-color:var(--blue)}:focus-visible{outline:3px solid var(--blue);outline-offset:2px}table{border-collapse:collapse;max-width:100%}th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}th{background:#f7f7f8}textarea{vertical-align:top}label{font-size:15px}.portal-main{overflow-x:auto}
-@media(max-width:650px){.portal-index{grid-template-columns:1fr}.portal-tools{gap:6px}.portal-tools form{gap:5px}.portal-main{padding-top:20px}}
-.portal-tools,.portal-tools form,.portal-tools label,.portal-bar>*{min-width:0;max-width:100%}.portal-tools select{max-width:min(42vw,18rem)}.portal-tools span{overflow-wrap:anywhere}.portal-item:focus-visible,.portal-item:hover{background:#f7f7f8}
-@media(max-width:650px){.portal-tools form{flex-wrap:wrap}.portal-tools label{overflow-wrap:anywhere}}
+/* ============================================================
+   中醫門診 · Staff portal & shared shell — design system v2
+   Modern medical SaaS: soft neutral canvas, teal brand,
+   rounded cards, layered elevation, full status palette.
+   ============================================================ */
 
-/* Staff workspace */
-body {background:#f7f7f8}
-.portal-top {background:#fff}
-.portal-frame {width:min(1060px,92%)}
-.portal-main {overflow:visible}
-.portal-tools button,.portal-tools select {border-radius:5px;font-size:14px}
-.portal-crumb a,.module-page>a:first-child {color:var(--muted);font-size:14px;text-underline-offset:4px}
-.portal-status {border-radius:5px;background:#edf2ff}
-.home-heading,.module-heading {display:flex;align-items:center;gap:18px;margin:18px 0 24px}
-.home-heading h1,.module-heading h1 {margin:0;font-size:clamp(28px,4vw,40px);overflow-wrap:anywhere}
-.home-heading p {margin:4px 0 0;font-size:14px;color:var(--muted)}
-.home-date,.module-tile {background:var(--blue);color:white;flex:none}
-.home-date {width:84px;padding:9px 12px 8px}
-.home-date span,.home-date b {display:block}
-.home-date span {font-size:11px;letter-spacing:.09em}
-.home-date b {font-size:46px;line-height:1;letter-spacing:-.06em}
-.module-tile,.item-icon {display:grid;place-items:center}
-.module-tile {width:56px;height:56px;border-radius:7px}
-.module-icon {width:26px;height:26px}
-.portal-main .home-section,.module-page h2 {font-size:20px;letter-spacing:-.02em;line-height:1.4;margin:26px 0 12px}
-.portal-index {border:0;gap:12px}
-.portal-item {display:flex;align-items:center;gap:16px;background:white;border:1px solid #dfe1e6;border-radius:10px;padding:20px}
-.portal-item:hover,.portal-item:focus-visible {border-color:var(--blue);background:white}
-.portal-item .item-icon {width:46px;height:46px;flex:none;border-radius:9px;background:#edf2ff;color:var(--blue)}
-.item-text {display:grid;gap:3px}
-.portal-item strong {color:var(--ink);font-size:18px}
-.item-text small {font-size:13px}
-.item-arrow {width:18px;flex:none;margin-left:auto;color:var(--blue)}
-.module-page {overflow-wrap:anywhere}
-.module-page>p,.module-page details>p {color:var(--muted);font-size:14px}
-.module-page a {text-underline-offset:3px}
-.module-page form:has(label),.module-page>details,.module-page>article,.module-page>dl,.module-page>.hr-section,.module-page>ul {border:1px solid #dfe1e6;border-radius:10px;background:#fff;padding:20px}
-.module-page form:has(label) {display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin:14px 0}
-.module-page form label {display:grid;gap:6px;flex:1 1 175px;min-width:0;color:var(--muted);font-size:13px;font-weight:550}
-.module-page form label:has(textarea) {flex-basis:100%}
-.module-page form label:has(input[type=checkbox]),.module-page fieldset label {display:inline-flex;flex-direction:row;align-items:center;gap:6px}
-.module-page input,.module-page textarea,.module-page select,.module-page button {font-size:14px;min-width:0;border-radius:5px}
-.module-page label :is(input:not([type=checkbox]),textarea,select) {width:100%;min-height:39px;color:var(--ink);font-weight:400}
-.module-page textarea {resize:vertical}
-.module-page button {min-height:38px;background:var(--blue);border-color:var(--blue);color:white;padding-inline:14px}
-.module-page button:hover {background:#002780}
-.module-page fieldset {flex-basis:100%;border:1px solid var(--line);border-radius:6px;padding:12px;min-width:0}
-.module-page fieldset label {margin:4px 12px 4px 0}
-.module-page>details,.module-page>article,.module-page>.hr-section {margin:16px 0}
-.module-page summary {cursor:pointer;color:var(--blue);font-weight:600}
-.module-page details form:has(label),.module-page .hr-section form:has(label) {background:#f7f7f8}
-.module-page .hr-section h2 {margin-top:0}
-.module-page .portal-login {display:grid;max-width:420px;gap:18px}
-.module-page .sheet-scroll {max-width:100%;overflow:auto;border:1px solid #dfe1e6;border-radius:9px;margin:14px 0 22px;background:white}
-.sheet-scroll table {width:100%;font-size:14px}
-.sheet-scroll th,.sheet-scroll td {padding:12px 16px;border-color:#e4e6ea;vertical-align:top}
-.sheet-scroll thead th {color:var(--muted);background:#f3f4f6;font-size:12px;white-space:nowrap}
-.sheet-scroll tbody tr:last-child>* {border-bottom:0}
-.sheet-scroll td[colspan] {padding:24px 16px;color:var(--muted)}
-.module-page>nav {border-bottom:1px solid var(--line);padding:10px 0;font-size:14px;line-height:2}
-.module-page>nav a {display:inline-block;margin-inline:4px}
-.module-page>dl {display:grid;grid-template-columns:minmax(90px,1fr) 3fr;gap:0;margin-block:18px}
-.module-page>dl>* {padding:10px;margin:0;border-bottom:1px solid #e4e6ea}
-.module-page dt {color:var(--muted)}
-.module-page>ul {padding-left:38px}
-.revenue-total {background:var(--blue);border-radius:8px;color:white;padding:18px 22px;display:grid}
-.revenue-total strong {font-size:clamp(24px,4vw,36px)}
-.revenue-total span {font-size:14px}
-@media(max-width:650px) {
-    .portal-item {padding:15px;gap:12px}
-    .module-page form:has(label) {padding:14px}
-    .module-page form label {flex-basis:100%}
-    .module-page>details,.module-page>.hr-section {padding:14px}
-    .sheet-scroll :is(th,td) {padding:10px;overflow-wrap:normal}
-    .sheet-scroll td {min-width:5em}
-    .module-page .module-heading {gap:12px}
+/* ---- Design tokens ---- */
+:root {
+  --brand: #0E7C72;            /* primary teal */
+  --brand-strong: #0A5B53;     /* hover / pressed */
+  --brand-tint: #E7F3F1;       /* light tint surface */
+  --ink: #1C2B29;              /* near-black, teal cast */
+  --muted: #5C6B69;            /* secondary text */
+  --bg: #F4F7F6;               /* page canvas */
+  --card: #FFFFFF;
+  --surface-soft: #F7FAF9;     /* nested panels, table heads, hover */
+  --line: #E2E8E6;             /* hairline */
+  --line-strong: #C9D4D1;
+  --ok: #177245;   --ok-bg: #E8F5EE;
+  --warn: #8F6400; --warn-bg: #FBF1D9;
+  --bad: #B3372B;  --bad-bg: #FBEAE7;
+  --radius: 14px;              /* cards */
+  --radius-control: 10px;      /* inputs / buttons */
+  --radius-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(23, 43, 41, .05);
+  --shadow-2: 0 2px 6px rgba(23, 43, 41, .05), 0 12px 28px rgba(23, 43, 41, .07);
+  --frame: min(1080px, 92%);
+  color: var(--ink);
+  font: 15px/1.6 system-ui, -apple-system, "Helvetica Neue", Helvetica, "PingFang HK", "Microsoft JhengHei", sans-serif;
+  font-variant-numeric: tabular-nums;
 }
+
+/* ---- Base ---- */
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg) }
+a { color: var(--brand) }
+button, input, select, textarea { font: inherit; color: inherit; border: 1px solid var(--line-strong); border-radius: var(--radius-control); padding: 7px 12px; background: var(--card); max-width: 100% }
+button { cursor: pointer; font-weight: 550; color: var(--ink) }
+button:hover { border-color: var(--brand); background: var(--brand-tint); color: var(--brand-strong) }
+:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; border-radius: 4px }
+table { border-collapse: collapse; max-width: 100% }
+th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top }
+th { background: var(--surface-soft); color: var(--muted); font-size: 12px; font-weight: 600 }
+textarea { vertical-align: top; resize: vertical }
+label { font-size: 14px }
+meter { accent-color: var(--brand) }
+code { background: var(--brand-tint); color: var(--brand-strong); border-radius: 6px; padding: 2px 7px; font-size: .92em; overflow-wrap: anywhere }
+
+/* ---- App frame & top bar ---- */
+.portal-frame { width: var(--frame); margin: auto }
+.portal-top { background: var(--card); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-1) }
+.portal-bar, .portal-tools, .portal-tools form { display: flex; align-items: center; gap: 12px }
+.portal-bar { min-height: 68px; justify-content: space-between; flex-wrap: wrap; padding: 10px 0 }
+.portal-brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--ink); font-size: 19px; font-weight: 700; letter-spacing: -.01em }
+.portal-brand svg { width: 26px; height: 26px; color: var(--brand) }
+.portal-tools { flex-wrap: wrap; font-size: 13.5px; color: var(--muted); gap: 8px }
+.portal-tools form { gap: 8px }
+.portal-tools select { min-height: 34px; padding: 5px 10px; font-size: 13.5px; max-width: min(42vw, 18rem) }
+.portal-tools button { min-height: 34px; padding: 5px 12px; font-size: 13.5px }
+.portal-main { padding: 26px 0 64px; overflow: visible }
+.portal-main > * { min-width: 0 }
+.portal-main h1 { margin: 14px 0 26px; font-size: clamp(26px, 4vw, 36px); letter-spacing: -.02em; line-height: 1.2; font-weight: 750 }
+.portal-main h2 { margin: 26px 0 12px; font-size: 17px; letter-spacing: -.01em }
+.portal-crumb { font-size: 13.5px }
+.portal-crumb a { color: var(--muted); text-underline-offset: 4px }
+
+/* ---- Notices: role differentiates info vs error ---- */
+.portal-status { padding: 12px 16px; border-radius: var(--radius-control); margin: 14px 0; font-size: 14px }
+.portal-status[role="status"] { background: var(--brand-tint); color: var(--brand-strong); border: 1px solid #CBE4E0 }
+.portal-status[role="alert"] { background: var(--bad-bg); color: var(--bad); border: 1px solid #F0CFCB }
+.portal-status ul { margin: 0; padding-left: 18px }
+
+/* ---- Home: greeting + module grid ---- */
+.home-heading, .module-heading { display: flex; align-items: center; gap: 16px; margin: 6px 0 22px }
+.home-heading h1, .module-heading h1 { margin: 0; font-size: clamp(24px, 3.4vw, 32px); letter-spacing: -.02em; line-height: 1.25; font-weight: 750; overflow-wrap: anywhere }
+.home-heading p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted) }
+.home-date, .module-tile { background: linear-gradient(145deg, var(--brand), var(--brand-strong)); color: #fff; flex: none; box-shadow: var(--shadow-1) }
+.home-date { width: 82px; padding: 10px 13px 9px; border-radius: var(--radius-control) }
+.home-date span, .home-date b { display: block }
+.home-date span { font-size: 11px; letter-spacing: .12em; opacity: .92 }
+.home-date b { font-size: 44px; line-height: 1.05; letter-spacing: -.05em; font-weight: 700 }
+.module-tile { width: 54px; height: 54px; border-radius: var(--radius); display: grid; place-items: center }
+.module-icon { width: 26px; height: 26px }
+.home-section { font-size: 13px; font-weight: 650; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; margin: 26px 0 14px }
+
+.portal-index { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px }
+.portal-item { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 18px; text-decoration: none; box-shadow: var(--shadow-1); transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease }
+.portal-item:hover, .portal-item:focus-visible { border-color: var(--line-strong); background: var(--card); box-shadow: var(--shadow-2); transform: translateY(-2px) }
+.portal-item:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px }
+.portal-item .item-icon { width: 46px; height: 46px; flex: none; border-radius: 12px; background: var(--brand-tint); color: var(--brand); display: grid; place-items: center }
+.portal-item .item-icon svg { width: 22px; height: 22px }
+.item-text { display: grid; gap: 3px; min-width: 0 }
+.portal-item strong { color: var(--ink); font-size: 16.5px; font-weight: 650 }
+.item-text small { font-size: 13px; color: var(--muted) }
+.item-arrow { width: 18px; height: 18px; flex: none; margin-left: auto; color: var(--brand); opacity: .55; transition: transform .15s ease, opacity .15s ease }
+.portal-item:hover .item-arrow, .portal-item:focus-visible .item-arrow { transform: translateX(3px); opacity: 1 }
+
+/* ---- Login ---- */
+.module-page .portal-login { display: grid; max-width: 400px; gap: 15px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; box-shadow: var(--shadow-1); margin: 8vh auto 0 }
+.portal-login label { display: grid; gap: 6px; font-size: 13.5px; color: var(--muted); font-weight: 550 }
+.portal-login input { min-height: 42px }
+.portal-login button { min-height: 42px; background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600 }
+.portal-login button:hover { background: var(--brand-strong); border-color: var(--brand-strong); color: #fff }
+
+/* ---- Module pages ---- */
+.module-page { overflow-wrap: anywhere }
+.module-page > a:first-child { color: var(--muted); font-size: 13.5px; text-underline-offset: 4px }
+.module-page > a:first-child::before { content: "← "; color: var(--brand) }
+.module-page > p, .module-page details > p { color: var(--muted); font-size: 13.5px }
+.module-page a { text-underline-offset: 3px }
+.module-page h2 { font-size: 16.5px; font-weight: 650; margin: 24px 0 12px }
+
+/* Cards: top-level forms, details, articles, lists */
+.module-page form:has(label), .module-page > details, .module-page > article, .module-page > dl, .module-page > .hr-section, .module-page > ul {
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 20px; box-shadow: var(--shadow-1);
+}
+.module-page form:has(label) { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; margin: 14px 0 }
+.module-page form label { display: grid; gap: 6px; flex: 1 1 175px; min-width: 0; color: var(--muted); font-size: 12.5px; font-weight: 600 }
+.module-page form label:has(textarea) { flex-basis: 100% }
+.module-page form label:has(input[type="checkbox"]), .module-page fieldset label { display: inline-flex; flex-direction: row; align-items: center; gap: 7px; font-size: 14px; font-weight: 400; color: var(--ink) }
+.module-page label :is(input:not([type="checkbox"]), textarea, select) { width: 100%; min-height: 40px; color: var(--ink); font-weight: 400; font-size: 14px }
+.module-page textarea { resize: vertical }
+.module-page input, .module-page textarea, .module-page select, .module-page button { font-size: 14px; min-width: 0 }
+.module-page button { min-height: 40px; padding-inline: 15px; background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; box-shadow: var(--shadow-1) }
+.module-page button:hover { background: var(--brand-strong); border-color: var(--brand-strong); color: #fff }
+.module-page button[value="csv"] { background: var(--card); color: var(--brand-strong); border-color: var(--brand) }
+.module-page button[value="csv"]:hover { background: var(--brand-tint); border-color: var(--brand-strong) }
+.module-page fieldset { flex-basis: 100%; border: 1px solid var(--line); border-radius: var(--radius-control); padding: 12px 14px; min-width: 0 }
+.module-page fieldset legend { font-size: 12.5px; font-weight: 600; color: var(--muted); padding-inline: 4px }
+.module-page > details, .module-page > article, .module-page > .hr-section { margin: 16px 0 }
+.module-page summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14px }
+.module-page details form:has(label), .module-page .hr-section form:has(label) { background: var(--surface-soft); border-color: transparent; box-shadow: none }
+.module-page .hr-section h2 { margin-top: 0 }
+
+/* Data tables */
+.module-page .sheet-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); margin: 14px 0 22px; background: var(--card); box-shadow: var(--shadow-1) }
+.sheet-scroll table { width: 100%; font-size: 13.5px }
+.sheet-scroll th, .sheet-scroll td { padding: 11px 16px; border-color: var(--line); vertical-align: top }
+.sheet-scroll thead th { color: var(--muted); background: var(--surface-soft); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; font-weight: 650 }
+.sheet-scroll tbody tr:nth-child(even):not(:hover) > * { background: var(--surface-soft) }
+.sheet-scroll tbody tr:hover > * { background: #ECF4F2 }
+.sheet-scroll tbody tr:last-child > * { border-bottom: 0 }
+.sheet-scroll td[colspan] { padding: 26px 16px; color: var(--muted); background: var(--card) !important }
+
+/* Sub-navigation link bars */
+.module-page > nav { border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 14px; line-height: 2 }
+.module-page > nav a { display: inline-block; margin-inline: 4px; text-decoration: none; padding: 4px 12px; border-radius: var(--radius-pill); color: var(--muted) }
+.module-page > nav a:hover { background: var(--brand-tint); color: var(--brand-strong) }
+
+/* Definition lists (receipt etc.) */
+.module-page > dl { display: grid; grid-template-columns: minmax(96px, 1fr) 3fr; gap: 0; margin-block: 18px }
+.module-page > dl > * { padding: 11px 14px; margin: 0; border-bottom: 1px solid var(--line); background: var(--card) }
+.module-page > dl > :nth-last-child(-n+2) { border-bottom: 0 }
+.module-page dt { color: var(--muted); font-size: 13px }
+.module-page > ul { padding-left: 38px }
+
+/* KPI card (reports) */
+.revenue-total { background: linear-gradient(140deg, var(--brand), var(--brand-strong)); border-radius: var(--radius); color: #fff; padding: 22px 24px; display: grid; gap: 3px; box-shadow: var(--shadow-2) }
+.revenue-total strong { font-size: clamp(26px, 4vw, 38px); letter-spacing: -.02em; font-weight: 750 }
+.revenue-total span { font-size: 13.5px; opacity: .9 }
+
+/* ---- Responsive ---- */
+.portal-tools, .portal-tools form, .portal-tools label, .portal-bar > * { min-width: 0; max-width: 100% }
+.portal-tools span { overflow-wrap: anywhere }
+@media (max-width: 650px) {
+  .portal-index { grid-template-columns: 1fr }
+  .portal-tools { gap: 6px }
+  .portal-tools form { gap: 5px; flex-wrap: wrap }
+  .portal-main { padding-top: 18px }
+  .portal-item { padding: 15px; gap: 12px }
+  .module-page form:has(label) { padding: 15px }
+  .module-page form label { flex-basis: 100% }
+  .module-page > details, .module-page > .hr-section { padding: 15px }
+  .sheet-scroll :is(th, td) { padding: 9px 10px; overflow-wrap: normal }
+  .sheet-scroll td { min-width: 5em }
+  .module-page .module-heading { gap: 12px }
+  .module-page .portal-login { margin-top: 5vh; padding: 20px }
+}
+
+/* ---- Enhanced selects: custom chevron + branded listbox ---- */
+select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1.5 1.5 6 6.2 10.5 1.5' fill='none' stroke='%230E7C72' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 38px }
+select::-ms-expand { display: none }
+.portal-tools select { padding-right: 31px; background-position: right 9px center }
+.select-menu { position: fixed; z-index: 999; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-2); padding: 6px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; font-size: 14px; color: var(--ink); animation: select-menu-in .12s ease }
+@keyframes select-menu-in { from { opacity: 0; transform: translateY(-3px) } to { opacity: 1; transform: none } }
+.select-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 8px; line-height: 1.4; cursor: pointer }
+.select-option-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.select-option-check { width: 14px; height: 14px; flex: none; stroke: var(--brand); stroke-width: 2; fill: none; opacity: 0 }
+.select-option[aria-selected="true"] { color: var(--brand-strong); font-weight: 600 }
+.select-option[aria-selected="true"] .select-option-check { opacity: 1 }
+.select-option.is-active { background: var(--brand-tint) }
+.select-option.is-disabled { color: var(--muted); opacity: .55; cursor: default }
+.select-option.is-disabled .select-option-check { opacity: 0 }
+
+/* ---- Print (receipts) ---- */
 @media print {
-    body {background:white}
-    .module-heading .module-tile {display:none}
-    .sheet-scroll {overflow:visible}
+  body { background: white }
+  .module-heading .module-tile { display: none }
+  .sheet-scroll { overflow: visible; box-shadow: none }
+  .select-menu { display: none }
 }

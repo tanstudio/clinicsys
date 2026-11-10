@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-HK">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title', '職員工作台') · 中醫門診</title><link rel="stylesheet" href="/staff.css">@stack('styles')</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title', '職員工作台') · 中醫門診</title><link rel="stylesheet" href="/staff.css"><script defer src="/assets/enhance-selects.js"></script>@stack('styles')</head>
 <body>
 <header class="portal-top"><div class="portal-frame portal-bar">
 <a class="portal-brand" href="/staff"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M0 10h10V0h12v10h10v12H22v10H10V22H0z"/></svg>中醫門診</a>

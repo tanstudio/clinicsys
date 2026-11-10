@@ -2,10 +2,10 @@
 @section('title', '員工檔案')
 @push('styles')
 <style>
-.hr-section{border-top:1px solid var(--line);margin-top:28px;scroll-margin-top:18px}
+.hr-section{border-top:1px solid var(--line);margin-top:26px;scroll-margin-top:18px}
 .hr-section form{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:14px 0}
-.hr-section label{display:grid;gap:4px;min-width:min(180px,100%);max-width:100%}
-.hr-section article{border-left:2px solid var(--line);padding:0 0 0 16px;margin:18px 0}
+.hr-section label{display:grid;gap:5px;min-width:min(180px,100%);max-width:100%}
+.hr-section article{border-left:3px solid var(--brand-tint);padding:0 0 0 16px;margin:18px 0}
 .hr-section article h3,.hr-section article p{margin:4px 0}
 .hr-section article p,.hr-section li{overflow-wrap:anywhere}
 .hr-section nav svg{width:1.1em;height:1.1em}
@@ -19,7 +19,7 @@
     $leaveTypes = ['annual'=>'年假','sick'=>'病假','maternity'=>'產假'];
     $statuses = ['approved'=>'已批准','rejected'=>'已拒絕','pending'=>'待審批'];
 @endphp
-<a href="{{ url('/staff/hr') }}">← 員工名單</a>
+<a href="{{ url('/staff/hr') }}">員工名單</a>
 <header class="module-heading"><span class="module-tile">@include('staff.icon', ['module'=>'hr'])</span><h1>{{ $person->name }}</h1></header>
 <p>{{ $person->email }} · {{ $person->role }}</p>
 @if(session('hr_status'))<p role="status">{{ session('hr_status') }}</p>@endif
