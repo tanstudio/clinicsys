@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token() }}"><title>線上預約</title>
-<link rel="stylesheet" href="/booking.css"><script defer src="/assets/booking.js"></script>
+<link rel="stylesheet" href="/booking.css"><script defer src="/assets/booking.js"></script><script defer src="/assets/enhance-selects.js"></script>
 </head>
 <body x-data="booking" data-reference="{{ $appointment->reference ?? '' }}" data-expected-slot="{{ $appointment->slot_id ?? '' }}">
 <header><div class="wrap nav"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M0 10h10V0h12v10h10v12H22v10H10V22H0z"/></svg><b x-text="t('brand')">中醫門診</b></div><div class="nav-actions"><a :href="'/appointments/manage?lang='+lang" @if($embed ?? false) target="_blank" rel="noopener" @endif x-text="t('manage')"></a><button class="language" @click="toggle" x-text="lang==='zh'?'English':'繁體中文'">English</button></div></div></header>

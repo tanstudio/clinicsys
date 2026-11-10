@@ -1,7 +1,7 @@
 @extends('staff.layout')
 @section('title', '收據')
 @push('styles')
-<style>@media print{.portal-top,.portal-crumb,.receipt-actions{display:none}.portal-main{width:100%;overflow:visible}}</style>
+<style>@media print{.portal-top,.portal-crumb,.receipt-actions{display:none}.portal-main{width:100%;overflow:visible}.module-page>dl{box-shadow:none;border-color:var(--line)}}</style>
 @endpush
 @section('content')
 <header class="module-heading"><span class="module-tile">@include('staff.icon', ['module'=>'pos'])</span><h1>收據 #{{ $item->id }}</h1></header>
