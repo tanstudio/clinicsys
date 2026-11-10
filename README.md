@@ -104,6 +104,7 @@ node tests/operations-browser.mjs
 php tests/patient-phone.php
 php tests/privacy-rendering.php
 php tests/whatsapp-cloud.php
+php tests/asset-versions.php
 node tests/whatsapp-browser.mjs
 CLINIC_TEST_PHONE_REGION=86 php tests/messaging.php
 node tests/patient-phone.mjs
@@ -116,3 +117,8 @@ It compares all restored rows and decrypts patient details, clinical records and
 The application stores HR attachment bytes in MySQL, so they are included in the database dump.
 The script never restores over the local development database or a production database.
 This drill does not configure production backup retention, scheduling or key custody.
+
+## Deployment
+
+See [production deployment](deploy/README.md) for building a release package, the read-only check and the deployment client.
+Run `npm run build` before deploying; `public/assets/*.js` is build output and stays out of git.

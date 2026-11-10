@@ -1,0 +1,55 @@
+set -eu
+umask 077
+# Rendered by build-release.sh. @NAME@ is the new release, @PREVIOUS@ the live one, @CLEANUP@ inactive release names.
+name=@NAME@
+release="$HOME/clinic-releases/$name"
+base="$HOME/clinic-releases/@PREVIOUS@"
+# public_html/index.php requires dirname(__DIR__, 3).'/clinic-releases/<release>/public/index.php',
+# so the entry switch matches the path relative to the home directory, not $HOME.
+old_ref="/clinic-releases/@PREVIOUS@/public/index.php"
+new_ref="/clinic-releases/$name/public/index.php"
+php=/usr/local/php82/bin/php
+entry="$HOME/domains/clinicsys.gogo2hk.com/public_html/index.php"
+cd "$release"
+[ ! -f done ] || exit 0
+echo "START $(date -u +%FT%TZ)"
+grep -q "$old_ref" "$entry"
+echo "PASS live entry references the previous release"
+tar -xzf source.tar.gz
+mkdir -p bootstrap/cache public/assets
+cp -al "$base/vendor" .
+ln -s "$HOME/clinic-releases/v1.0.0/storage" storage
+ln -s "$HOME/clinic-releases/v1.0.0/.env" .env
+cp booking.js public/assets/booking.js
+cp enhance-selects.js public/assets/enhance-selects.js
+sha256sum -c source.sha256 > verification.log
+echo "PASS $(wc -l < verification.log) source checksums"
+sha256sum .env > environment.sha256
+# No release here migrates. Stop before switching if the database expects a migration.
+# Write to a file first so an artisan failure stops the script instead of hiding behind grep.
+"$php" artisan migrate:status > migrations.log
+if grep -q Pending migrations.log; then echo "FAIL pending migrations"; exit 1; fi
+echo "PASS no pending migrations"
+"$php" backup.php
+"$php" artisan view:cache > views.log
+echo "PASS Blade views compiled"
+"$php" artisan route:list > routes.log
+echo "PASS $(grep -c '' routes.log) route lines"
+sha256sum -c environment.sha256
+cp -p "$entry" previous-index.php
+sed "s@$old_ref@$new_ref@" "$entry" > "$entry.deploy-stage"
+grep -q "$new_ref" "$entry.deploy-stage"
+chmod 644 "$entry.deploy-stage"
+mv "$entry.deploy-stage" "$entry"
+grep -q "$new_ref" "$entry"
+echo "PASS entry points to $release"
+# Remove inactive attempts only when the live entry does not use them. rm removes their storage and .env
+# symlinks and vendor hard links themselves, never the targets.
+for attempt in @CLEANUP@; do
+  dir="$HOME/clinic-releases/$attempt"
+  if [ -d "$dir" ] && ! grep -q "/clinic-releases/$attempt/public/index.php" "$entry"; then
+    rm -rf "$dir"
+    echo "PASS removed inactive release $attempt"
+  fi
+done
+touch done
