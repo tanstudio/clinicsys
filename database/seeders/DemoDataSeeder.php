@@ -12,6 +12,7 @@ use App\Messaging\NotificationQueue;
 use App\Models\ClinicalTemplate;
 use App\Models\Encounter;
 use App\Models\Patient;
+use App\Support\Loyalty;
 use App\Support\PatientPhone;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -146,6 +147,14 @@ class DemoDataSeeder extends Seeder
             ['reply', 2, '多謝你的回饋！如有需要歡迎再預約覆診。'], ['link', 1], ['assign', 1, true, 'closed', 'feedback', true]]],
         [['new', 7], 2, 0, '07:50', [['in', 0, '請問星期日開唔開？']]],
     ];
+    // [name, threshold HKD, rolling months, consultation discount %]. Head office can change these in /staff/loyalty.
+    private bool $voidShown = false;
+    public const DEMO_TIERS = [['銀卡', 1500, 12, 5], ['金卡', 4000, 12, 10]];
+    // [name, service index, sessions, bonus sessions, price HKD, validity days, branch indexes or null for all].
+    public const DEMO_PLANS = [
+        ['針灸十次套票', 1, 10, 1, 4200, 365, null], ['推拿五次套票', 2, 5, 0, 1900, 180, null],
+        ['中醫內科八次套票', 0, 8, 0, 2100, 240, null], ['拔罐體驗三次', 3, 3, 0, 780, 30, [0]],
+    ];
     public const MOVEMENT_MARK = ' · 示範數據';
     // Stocked but not prescribed, so the stock list also shows slow-moving herbs.
     private const EXTRA_HERBS = ['枸杞子', '菊花'];
@@ -169,9 +178,11 @@ class DemoDataSeeder extends Seeder
         $catalog = $this->catalog();
         $this->slots($catalog);
         $summary = array_fill_keys(['staff_accounts', 'patients', 'booked', 'rescheduled', 'cancelled', 'past_visits', 'encounters',
-            'past_cancelled', 'past_without_record', 'templates', 'followups', 'receipts', 'awaiting_payment'], 0);
+            'past_cancelled', 'past_without_record', 'templates', 'followups', 'receipts', 'awaiting_payment',
+            'tiers', 'plans', 'packages_sold', 'redemptions', 'voids'], 0);
         $staff = $this->staff($catalog, $summary);
         $summary['templates'] = $this->templates($catalog, $staff['branch_doctors'], $admin);
+        $plans = $this->loyaltyRules($catalog, $summary);
         $patients = [];
         for ($i = 0; $i < self::PATIENTS; $i++) {
             [$name, $phone] = $this->person($i);
@@ -188,7 +199,9 @@ class DemoDataSeeder extends Seeder
             }
             $this->profile($patient, $branch, $i);
             $summary['followups'] += $this->followup($patient, $branch, $i);
-            $this->receipts($patient, $summary);
+            $seller = $staff['ids'][self::RECEPTION[$i % count(self::BRANCHES)]];
+            $this->packages($patient, $branch, $i, $plans, $seller, $admin, $summary);
+            $this->receipts($patient, $seller, $i, $summary);
             $patients[] = $patient->id;
         }
         $summary['recorders_assigned'] = $this->assignRecorders($patients, $staff['doctors']);
@@ -501,21 +514,57 @@ class DemoDataSeeder extends Seeder
     /**
      * One receipt per encounter, paid 5 to 15 minutes after the record, as reception does at POS.
      * About half of the encounters from the last 3 days stay unpaid, so POS shows a realistic queue.
-     * The amount is the service fee plus HK$48 per herbal dose in the prescription.
+     * A visit covered by one of the patient's packages is redeemed instead: an HKD 0 receipt and one session off.
+     * The first redemption of a fresh run is voided and paid in cash, to show the void trail.
+     * Otherwise the amount is the service fee plus HK$48 per herbal dose in the prescription.
      */
-    private function receipts(Patient $patient, array &$summary): void
+    private function receipts(Patient $patient, int $seller, int $i, array &$summary): void
     {
         $encounters = DB::table('encounters as e')->join('appointments as a', 'a.id', '=', 'e.appointment_id')
             ->join('slots as s', 's.id', '=', 'a.slot_id')->join('services as v', 'v.id', '=', 's.service_id')
             ->where('e.patient_id', $patient->id)->whereNull('a.cancelled_at')
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('receipts as r')->whereColumn('r.encounter_id', 'e.id'))
-            ->orderBy('e.id')->get(['e.id', 'e.appointment_id', 'e.branch_id', 'e.created_at', 'v.name_zh as service']);
+            ->orderBy('e.created_at')->orderBy('e.id')
+            ->get(['e.id', 'e.appointment_id', 'e.branch_id', 'e.created_at', 's.service_id', 'v.name_zh as service']);
         $recent = CarbonImmutable::now('UTC')->subDays(3);
         foreach ($encounters as $encounter) {
             $recorded = CarbonImmutable::parse($encounter->created_at, 'UTC');
             if ($recorded->greaterThan($recent) && ($encounter->id + $patient->id) % 2 === 0) {
                 $summary['awaiting_payment']++;
                 continue;
+            }
+            $paidAt = $recorded->addMinutes(5 + $encounter->id % 11);
+            $visitDay = $recorded->setTimezone('Asia/Hong_Kong')->toDateString();
+            $package = DB::table('patient_packages')->where('patient_id', $patient->id)->where('service_id', $encounter->service_id)
+                ->where('starts_on', '<=', $visitDay)->where('expires_on', '>=', $visitDay)->where('created_at', '<', $recorded)
+                ->orderBy('expires_on')->orderBy('id')->get()
+                ->first(fn ($p) => in_array($encounter->branch_id, json_decode($p->allowed_branches, true), true)
+                    && Loyalty::balances([$p->id])[$p->id] > 0);
+            if ($package) {
+                $left = Loyalty::balances([$package->id])[$package->id] - 1;
+                $reference = (string) Str::uuid();
+                DB::table('receipts')->insert(['reference' => $reference, 'branch_id' => $encounter->branch_id, 'patient_id' => $patient->id,
+                    'appointment_id' => $encounter->appointment_id, 'encounter_id' => $encounter->id, 'kind' => 'redeem',
+                    'description' => '使用療程套票：'.$package->name.'（剩 '.$left.' 次）', 'amount_cents' => 0,
+                    'method' => 'package', 'created_at' => $paidAt]);
+                $entry = DB::table('package_ledger')->insertGetId(['reference' => (string) Str::uuid(), 'package_id' => $package->id,
+                    'kind' => 'redeem', 'sessions' => -1, 'encounter_id' => $encounter->id, 'receipt_reference' => $reference,
+                    'branch_id' => $encounter->branch_id, 'staff_id' => $seller, 'created_at' => $paidAt]);
+                $summary['redemptions']++;
+                $voided = !$this->voidShown && !DB::table('package_ledger')->where('kind', 'void')->exists();
+                $this->voidShown = $this->voidShown || $voided;
+                if (!$voided) {
+                    $this->project($paidAt);
+                    continue;
+                }
+                // The void restores the session and deletes the HKD 0 receipt; the visit is then paid normally.
+                DB::table('receipts')->where('reference', $reference)->delete();
+                DB::table('package_ledger')->insert(['reference' => (string) Str::uuid(), 'package_id' => $package->id, 'kind' => 'void',
+                    'sessions' => 1, 'encounter_id' => $encounter->id, 'receipt_reference' => $reference,
+                    'branch_id' => $encounter->branch_id, 'staff_id' => $seller, 'reason' => '扣錯套票，改以現金支付',
+                    'voids_id' => $entry, 'created_at' => $paidAt->addMinutes(2)]);
+                $summary['voids']++;
+                $paidAt = $paidAt->addMinutes(3);
             }
             $record = Encounter::findOrFail($encounter->id)->clinical_record;
             $doses = str_contains($record['prescription'] ?? '', '七劑') ? 7 : (str_contains($record['prescription'] ?? '', '五劑') ? 5 : 0);
@@ -525,10 +574,85 @@ class DemoDataSeeder extends Seeder
                 'patient_id' => $patient->id, 'appointment_id' => $encounter->appointment_id, 'encounter_id' => $encounter->id,
                 'description' => $encounter->service.'診金 HK$'.$fee.($doses ? '、中藥 '.$doses.' 劑' : ''),
                 'amount_cents' => ($fee + $doses * 48) * 100,
-                'method' => $slot < 6 ? 'cash' : ($slot < 11 ? 'card' : ($slot < 18 ? 'fps' : 'other')),
-                'created_at' => $recorded->addMinutes(5 + $encounter->id % 11)]);
+                'method' => $package ? 'cash' : ($slot < 6 ? 'cash' : ($slot < 11 ? 'card' : ($slot < 18 ? 'fps' : 'other'))),
+                'created_at' => $paidAt]);
             $summary['receipts']++;
-            $this->project($recorded->addMinutes(5 + $encounter->id % 11));
+            $this->project($paidAt);
+        }
+    }
+
+    /** Demo tier and plan rules, written to the same tables head office edits in /staff/loyalty. @return array<string, int> */
+    private function loyaltyRules(array $catalog, array &$summary): array
+    {
+        foreach (self::DEMO_TIERS as [$name, $threshold, $months, $discount]) {
+            if (!DB::table('customer_tiers')->where('name', $name)->exists()) {
+                DB::table('customer_tiers')->insert(['name' => $name, 'threshold_cents' => $threshold * 100, 'window_months' => $months,
+                    'discount_percent' => $discount, 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
+                $summary['tiers']++;
+            }
+        }
+        $plans = [];
+        foreach (self::DEMO_PLANS as [$name, $service, $sessions, $bonus, $price, $days, $branches]) {
+            $id = DB::table('package_plans')->where('name', $name)->value('id');
+            if (!$id) {
+                $id = DB::table('package_plans')->insertGetId(['name' => $name, 'service_id' => $catalog['services'][$service],
+                    'sessions' => $sessions, 'bonus_sessions' => $bonus, 'price_cents' => $price * 100, 'validity_days' => $days,
+                    'active' => true, 'created_at' => now(), 'updated_at' => now()]);
+                $allowed = $branches === null ? $catalog['branches'] : array_map(fn ($b) => $catalog['branches'][$b], $branches);
+                DB::table('package_plan_branches')->insert(array_map(fn ($b) => ['plan_id' => $id, 'branch_id' => $b], $allowed));
+                $summary['plans']++;
+            }
+            $plans[$name] = $id;
+        }
+
+        return $plans;
+    }
+
+    /**
+     * Package sales: long-term patients buy the plan for the service of their first visit the evening before it;
+     * a third of the returning patients bought a plan 2 days ago and have not used it; patient 6 holds an expired
+     * trial; patient 0 has a manual gold tier.
+     */
+    private function packages(Patient $patient, int $branch, int $i, array $plans, int $seller, int $admin, array &$summary): void
+    {
+        if ($i === 0) {
+            DB::table('patient_tiers')->upsert([['patient_id' => $patient->id, 'tier_id' => DB::table('customer_tiers')->where('name', self::DEMO_TIERS[1][0])->value('id'),
+                'reason' => '企業客戶協議', 'set_by' => $admin, 'set_at' => now('UTC')]], ['patient_id'], ['tier_id', 'reason', 'set_by', 'set_at']);
+        }
+        if (DB::table('patient_packages')->where('patient_id', $patient->id)->exists()) {
+            return;
+        }
+        $first = DB::table('encounters as e')->join('appointments as a', 'a.id', '=', 'e.appointment_id')->join('slots as s', 's.id', '=', 'a.slot_id')
+            ->where('e.patient_id', $patient->id)->orderBy('e.created_at')->first(['e.created_at', 's.service_id']);
+        $today = CarbonImmutable::today('Asia/Hong_Kong');
+        $byService = fn ($service) => collect($plans)->first(fn ($id) => (int) DB::table('package_plans')->where('id', $id)->value('service_id') === (int) $service
+            && DB::table('package_plan_branches')->where(['plan_id' => $id, 'branch_id' => $branch])->exists());
+        $sales = [];
+        if ($i % 4 === 2 && $first && ($plan = $byService($first->service_id))) {
+            $sales[] = [$plan, CarbonImmutable::parse($first->created_at, 'UTC')->setTimezone('Asia/Hong_Kong')->subDay()->setTime(18, 0)];
+        }
+        if ($i % 4 === 1 && intdiv($i, 4) % 3 === 0 && ($plan = $byService(DB::table('package_plans')->where('id', $plans['推拿五次套票'])->value('service_id')))) {
+            $sales[] = [$plan, $today->subDays(2)->setTime(15, 30)];
+        }
+        if ($i === 6) {
+            $sales[] = [$plans['拔罐體驗三次'], $today->subDays(50)->setTime(12, 0)];
+        }
+        foreach ($sales as $n => [$planId, $soldAt]) {
+            $plan = DB::table('package_plans')->find($planId);
+            $allowed = DB::table('package_plan_branches')->where('plan_id', $planId)->pluck('branch_id')->map(fn ($b) => (int) $b)->all();
+            $total = $plan->sessions + $plan->bonus_sessions;
+            $receipt = DB::table('receipts')->insertGetId(['reference' => (string) Str::uuid(), 'branch_id' => $branch, 'patient_id' => $patient->id,
+                'appointment_id' => null, 'encounter_id' => null, 'kind' => 'package', 'description' => '購買療程套票：'.$plan->name,
+                'amount_cents' => $plan->price_cents, 'method' => ['card', 'fps', 'cash'][($i + $n) % 3], 'created_at' => $soldAt->utc()]);
+            $package = DB::table('patient_packages')->insertGetId(['reference' => (string) Str::uuid(), 'patient_id' => $patient->id,
+                'plan_id' => $planId, 'sold_branch_id' => $branch, 'service_id' => $plan->service_id, 'name' => $plan->name,
+                'total_sessions' => $total, 'price_cents' => $plan->price_cents, 'allowed_branches' => json_encode($allowed),
+                'starts_on' => $soldAt->toDateString(), 'expires_on' => $soldAt->addDays($plan->validity_days - 1)->toDateString(),
+                'receipt_id' => $receipt, 'sold_by' => $seller, 'created_at' => $soldAt->utc(), 'updated_at' => $soldAt->utc()]);
+            DB::table('package_ledger')->insert(['reference' => (string) Str::uuid(), 'package_id' => $package, 'kind' => 'purchase',
+                'sessions' => $total, 'branch_id' => $branch, 'staff_id' => $seller, 'created_at' => $soldAt->utc()]);
+            $summary['packages_sold']++;
+            $this->project($soldAt);
         }
     }
 

@@ -18,7 +18,7 @@ Route::prefix('staff')->group(function () {
         Route::get('/{type}', [DirectoryController::class,'index'])->whereIn('type',array_keys(DirectoryController::TITLES))->name('hq.directories');
         Route::post('/accounts/{id?}', [StaffAccountController::class,'save'])->whereNumber('id');
         Route::post('/{type}/{id?}', [DirectoryController::class,'save'])->whereIn('type',['practitioners','services'])->whereNumber('id');
-        foreach (['staff_booking', 'clinical', 'commerce', 'hr', 'messaging'] as $module) {
+        foreach (['staff_booking', 'clinical', 'commerce', 'hr', 'messaging', 'loyalty'] as $module) {
             require __DIR__."/$module.php";
         }
     });

@@ -70,6 +70,19 @@ Filter inventory movements by exact herb name, operation and Hong Kong date rang
 The report screen exports the selected branches and dates as a UTF-8 CSV containing all six summary measures.
 CSV ratios with no denominator remain blank, and spreadsheet formula prefixes in branch names are escaped.
 
+## Customer tiers and session packages
+
+Head office edits tier and package rules at `/staff/loyalty`; no tier, price or session count lives in code.
+A tier has a spend threshold in HKD, a rolling number of months and a consultation discount percentage.
+A patient's tier is the highest active tier whose threshold the patient's paid receipts reach; head office may set a manual tier with a reason on the patient page.
+POS shows the tier discount as a hint, and each visit receipt keeps the tier and discount that applied.
+A plan has one service, sessions, bonus sessions, a price, a validity in days and the branches that may sell and redeem it.
+Reception sells a plan on the patient page; the sale issues a package receipt and copies the plan's values, so later rule changes never alter a sold package.
+At POS, a finished visit can be paid with one session of an eligible package: same service, allowed branch, unexpired and with sessions left.
+A redemption issues an HKD 0 receipt; a branch administrator can void it with a reason, which returns the session and the unpaid visit.
+The report screen lists package sales, net redemptions and unexpired sessions left per branch.
+Stored value, refunds, transfers and WhatsApp balance notices are planned for phase 2.
+
 ## Notifications and privacy review
 
 Run `php artisan schedule:work` in a separate local process or run `php artisan schedule:run` each minute under deployment supervision.
@@ -104,6 +117,7 @@ node tests/operations-browser.mjs
 php tests/patient-phone.php
 php tests/privacy-rendering.php
 php tests/whatsapp-cloud.php
+php tests/loyalty.php
 node tests/whatsapp-browser.mjs
 CLINIC_TEST_PHONE_REGION=86 php tests/messaging.php
 node tests/patient-phone.mjs

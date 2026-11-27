@@ -9,7 +9,8 @@
         'reports' => 'M4 3v17h17M8 16v-4m5 4V9m5 7V5',
         'inbox' => 'M4 4h16v13H9l-5 4z M8 9h8m-8 4h5',
         'hr' => 'M8 10a3 3 0 1 0 0-6a3 3 0 1 0 0 6m-6 9v-2a6 6 0 0 1 12 0v2z M16 5a3 3 0 0 1 0 6m1 2a5 5 0 0 1 5 5v1h-5',
-        'login' => 'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3m-4 4v3',
+        'loyalty' => 'M3 8h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z M14 8v10',
+        'login' =>'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3m-4 4v3',
     ];
 @endphp
 <svg class="module-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{ $paths[['accounts'=>'login','practitioners'=>'hr','services'=>'encounters'][$module] ?? $module] }}"></path></svg>

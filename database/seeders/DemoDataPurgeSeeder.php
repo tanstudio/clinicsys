@@ -51,13 +51,33 @@ class DemoDataPurgeSeeder extends Seeder
             DB::table('message_projections')->where('source', 'appointment_events')->whereIn('source_id', $events)->delete();
             DB::table('message_projections')->where('source', 'encounters')->whereIn('source_id', $encounters)->delete();
             DB::table('message_projections')->where('source', 'receipts')->whereIn('source_id', $receipts)->delete();
+            // Packages before receipts and encounters: the ledger references encounters, packages reference receipts.
+            $packages = DB::table('patient_packages')->whereIn('patient_id', $patients)->pluck('id');
+            $packageRows = DB::table('package_ledger')->whereIn('package_id', $packages)->orderByDesc('id')->pluck('id');
+            foreach ($packageRows->chunk(500) as $chunk) {
+                DB::table('package_ledger')->whereIn('id', $chunk)->delete();
+            }
+            DB::table('patient_packages')->whereIn('id', $packages)->delete();
+            DB::table('patient_tiers')->whereIn('patient_id', $patients)->delete();
             DB::table('receipts')->whereIn('id', $receipts)->delete();
             // Demo movements: dispenses linked to demo encounters, plus marked openings, deliveries and losses.
             $movements = DB::table('herbal_movements')->where(fn ($q) => $q->whereIn('encounter_id', $encounters)
                 ->orWhere('note', 'like', '%'.DemoDataSeeder::MOVEMENT_MARK))->get(['id', 'stock_id', 'kind', 'milligrams']);
+            // When real dispenses used demo stock, removing the demo receipts would make the balance negative.
+            // Stop instead of rewriting real stock, and name every herb that needs a manual stock count first.
+            $short = [];
             foreach ($movements->groupBy('stock_id') as $stock => $rows) {
                 $net = $rows->sum(fn ($m) => $m->kind === 'receive' ? (int) $m->milligrams : -(int) $m->milligrams);
+                $row = DB::table('herbal_stocks as s')->join('branches as b', 'b.id', '=', 's.branch_id')->where('s.id', $stock)
+                    ->lockForUpdate()->first(['s.milligrams', 's.herb', 'b.name_zh']);
+                if ((int) $row->milligrams < $net) {
+                    $short[] = sprintf('%s %s %.3f g', $row->name_zh, $row->herb, ($net - $row->milligrams) / 1000);
+                    continue;
+                }
                 DB::table('herbal_stocks')->where('id', $stock)->decrement('milligrams', $net);
+            }
+            if ($short !== []) {
+                throw new \RuntimeException('Real dispenses used demo stock; count and correct these herbs before purging: '.implode('; ', $short));
             }
             foreach ($movements->pluck('id')->chunk(500) as $chunk) {
                 DB::table('herbal_movements')->whereIn('id', $chunk)->delete();
@@ -72,6 +92,11 @@ class DemoDataPurgeSeeder extends Seeder
             DB::table('encounters')->whereIn('id', $encounters)->delete();
             DB::table('appointments')->whereIn('id', $appointments)->delete();
             $templateCount = DB::table('clinical_templates')->whereIn('id', $templates)->delete();
+            // Demo rules go only when no remaining package or manual tier uses them.
+            $plans = DB::table('package_plans')->whereIn('name', array_column(DemoDataSeeder::DEMO_PLANS, 0))
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('patient_packages as p')->whereColumn('p.plan_id', 'package_plans.id'))->delete();
+            $tiers = DB::table('customer_tiers')->whereIn('name', array_column(DemoDataSeeder::DEMO_TIERS, 0))
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('patient_tiers as t')->whereColumn('t.tier_id', 'customer_tiers.id'))->delete();
             // Demo staff use the reserved .invalid domain, so no real account can match.
             $staff = DB::table('staff_accounts')->where('email', 'like', '%@'.DemoDataSeeder::STAFF_DOMAIN)->pluck('id');
             DB::table('hr_leave')->whereIn('reviewer_id', $staff)->whereNotIn('staff_id', $staff)->update(['reviewer_id' => null]);
@@ -89,6 +114,7 @@ class DemoDataPurgeSeeder extends Seeder
             return ['patients' => DB::table('patients')->whereIn('id', $patients)->delete(), 'appointments' => $appointments->count(),
                 'encounters' => $encounters->count(), 'receipts' => $receipts->count(),
                 'herbal_movements' => $movements->count(), 'herbal_stocks' => $stocks, 'templates' => $templateCount,
+                'packages' => $packages->count(), 'package_ledger' => $packageRows->count(), 'plans' => $plans, 'tiers' => $tiers,
                 'conversation_threads' => $conversations->count(), 'contacts' => $orphans->count(),
                 'staff_accounts' => DB::table('staff_accounts')->whereIn('id', $staff)->delete()];
         });

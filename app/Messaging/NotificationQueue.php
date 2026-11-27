@@ -58,6 +58,10 @@ class NotificationQueue
             $branch = $slot->branch_id;
             $parameters = ['reference'=>$appointment->reference,'starts_at'=>$slot->starts_at.' (Hong Kong)'];
         } elseif ($source === 'receipts') {
+            // A package redemption is an HKD 0 receipt; package balance notices are planned for phase 2.
+            if ($row->method === 'package') {
+                return;
+            }
             $kind = 'payment';
             $branch = $row->branch_id;
             $body = "已收款 / Payment received · HKD ".number_format($row->amount_cents / 100, 2)." · $row->reference";
