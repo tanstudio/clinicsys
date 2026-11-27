@@ -13,6 +13,8 @@ require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $kernel = $app->make(Kernel::class);
 $kernel->bootstrap();
+// Without this, a failed check printed its error yet the script exited with status 0.
+set_exception_handler(function (Throwable $e) { fwrite(STDERR, $e->getMessage().PHP_EOL); exit(1); });
 if (!$app->environment('local', 'testing')) {
     exit(1);
 }
@@ -80,7 +82,8 @@ try {
     $now = CarbonImmutable::now('Asia/Hong_Kong')->startOfMinute();
     $shiftData = [
         'kind' => 'flex', 'starts_at' => $now->subMinutes(30)->format('Y-m-d\TH:i'),
-        'latest_start' => $now->subMinutes(10)->format('Y-m-d\TH:i'), 'required_minutes' => 60,
+        // A browser form posts every value as a string; Carbon rejects a string minute count.
+        'latest_start' => $now->subMinutes(10)->format('Y-m-d\TH:i'), 'required_minutes' => '60',
     ];
     hit('POST', "$person/shifts", 302, $shiftData);
     hit('POST', "$person/shifts", 422, $shiftData);
