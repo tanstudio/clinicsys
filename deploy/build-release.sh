@@ -1,7 +1,10 @@
 #!/bin/sh
 # Build a release package from a merged main commit.
-# Usage, from the repository root: sh deploy/build-release.sh <commit> <previous release> [inactive releases to remove...]
+# Usage, from the repository root: sh deploy/build-release.sh [--migrate] <commit> <previous release> [inactive releases to remove...]
+# --migrate allows apply.sh to run pending migrations, after the database backup and before the entry switch.
 set -eu
+migrate=0
+if [ "${1:-}" = "--migrate" ]; then migrate=1; shift; fi
 commit=$(git rev-parse --verify "$1^{commit}")
 previous=$2
 shift 2
@@ -28,8 +31,8 @@ tar -xzf "$out/source.tar.gz" -C "$tmp"
 (cd "$tmp" && find . -type f | sed 's|^\./||' | sort | xargs shasum -a 256) > "$out/source.sha256"
 rm -rf "$tmp"
 (cd "$out" && shasum -a 256 public/*.css public/assets/*.js > public.sha256)
-sed -e "s|@NAME@|$name|g" -e "s|@PREVIOUS@|$previous|g" -e "s|@CLEANUP@|$cleanup|g" "$tools/apply.sh.template" > "$out/apply.sh"
+sed -e "s|@NAME@|$name|g" -e "s|@PREVIOUS@|$previous|g" -e "s|@CLEANUP@|$cleanup|g" -e "s|@MIGRATE@|$migrate|g" "$tools/apply.sh.template" > "$out/apply.sh"
 cp "$tools/backup.php" "$out/backup.php"
-printf '{\n  "name": "%s",\n  "commit": "%s",\n  "previous": "%s",\n  "cleanup": "%s"\n}\n' "$name" "$commit" "$previous" "$cleanup" > "$out/release.json"
+printf '{\n  "name": "%s",\n  "commit": "%s",\n  "previous": "%s",\n  "cleanup": "%s",\n  "migrate": %s\n}\n' "$name" "$commit" "$previous" "$cleanup" "$([ $migrate = 1 ] && echo true || echo false)" > "$out/release.json"
 sh -n "$out/apply.sh"
-echo "PASS built $out: $(wc -l < "$out/source.sha256" | tr -d ' ') source files from $short; previous $previous"
+echo "PASS built $out: $(wc -l < "$out/source.sha256" | tr -d ' ') source files from $short; previous $previous; migrations $([ $migrate = 1 ] && echo allowed || echo refused)"

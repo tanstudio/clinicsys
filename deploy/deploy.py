@@ -102,7 +102,10 @@ assert ('name=' + NAME).encode() in files['apply.sh'] and ('/clinic-releases/' +
 source_count = len((HERE / 'source.sha256').read_text().splitlines())
 # Versioned URLs embed the first 12 hex digits of each file's sha256.
 by_version = {sha(data)[:12]: (p, data) for p, data in list(public_files.items()) + [('assets/booking.js', files['booking.js'])]}
-say(f'PASS local package {NAME}: {source_count} source files, 5 public files match public.sha256')
+MIGRATE = bool(config.get('migrate', False))
+assert f'[ "{1 if MIGRATE else 0}" != "1" ]'.encode() in files['apply.sh'], 'apply.sh migration setting does not match release.json'
+say(f'PASS local package {NAME}: {source_count} source files, 5 public files match public.sha256; migrations '
+    + ('allowed after the database backup' if MIGRATE else 'refused'))
 
 # ---- Sign in and read-only checks ------------------------------------------------------------
 session.auth = (USER, getpass.getpass(f'DirectAdmin password for {USER}: '))

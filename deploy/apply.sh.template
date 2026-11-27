@@ -1,6 +1,7 @@
 set -eu
 umask 077
-# Rendered by build-release.sh. @NAME@ is the new release, @PREVIOUS@ the live one, @CLEANUP@ inactive release names.
+# Rendered by build-release.sh. @NAME@ is the new release, @PREVIOUS@ the live one, @CLEANUP@ inactive release names,
+# @MIGRATE@ is 1 when the package was built with --migrate.
 name=@NAME@
 release="$HOME/clinic-releases/$name"
 base="$HOME/clinic-releases/@PREVIOUS@"
@@ -8,7 +9,8 @@ base="$HOME/clinic-releases/@PREVIOUS@"
 # so the entry switch matches the path relative to the home directory, not $HOME.
 old_ref="/clinic-releases/@PREVIOUS@/public/index.php"
 new_ref="/clinic-releases/$name/public/index.php"
-php=/usr/local/php82/bin/php
+# CLINIC_PHP exists only for a local rehearsal; the server leaves it unset.
+php=${CLINIC_PHP:-/usr/local/php82/bin/php}
 entry="$HOME/domains/clinicsys.gogo2hk.com/public_html/index.php"
 cd "$release"
 [ ! -f done ] || exit 0
@@ -25,12 +27,25 @@ cp enhance-selects.js public/assets/enhance-selects.js
 sha256sum -c source.sha256 > verification.log
 echo "PASS $(wc -l < verification.log) source checksums"
 sha256sum .env > environment.sha256
-# No release here migrates. Stop before switching if the database expects a migration.
 # Write to a file first so an artisan failure stops the script instead of hiding behind grep.
 "$php" artisan migrate:status > migrations.log
-if grep -q Pending migrations.log; then echo "FAIL pending migrations"; exit 1; fi
-echo "PASS no pending migrations"
+# The backup always comes before any migration, so a failed migration can be restored from it.
 "$php" backup.php
+if grep -q Pending migrations.log; then
+  # Migrations run while the previous release is still live, so they must keep that release working.
+  if [ "@MIGRATE@" != "1" ]; then echo "FAIL pending migrations; rebuild the package with --migrate"; exit 1; fi
+  grep Pending migrations.log | sed 's/^ */PENDING /'
+  if ! "$php" artisan migrate --force > migrate.log 2>&1; then
+    cat migrate.log
+    echo "FAIL migration; the live entry was not switched; restore pre-deploy-backup.sql if the schema changed"
+    exit 1
+  fi
+  "$php" artisan migrate:status > migrations-after.log
+  if grep -q Pending migrations-after.log; then echo "FAIL migrations still pending after migrate"; exit 1; fi
+  echo "PASS migrations applied"
+else
+  echo "PASS no pending migrations"
+fi
 "$php" artisan view:cache > views.log
 echo "PASS Blade views compiled"
 "$php" artisan route:list > routes.log
