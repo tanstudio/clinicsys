@@ -118,6 +118,8 @@ class HrController
             'latest_start' => 'required_if:kind,flex|nullable|date_format:Y-m-d\TH:i|after_or_equal:starts_at',
             'required_minutes' => 'required|integer|min:1|max:1440',
         ]);
+        // Validation accepts "480" as an integer but keeps the string; Carbon 3 rejects a string minute count.
+        $data['required_minutes'] = (int) $data['required_minutes'];
         $start = CarbonImmutable::parse($data['starts_at'], 'Asia/Hong_Kong');
         $latest = $data['kind'] === 'flex' ? CarbonImmutable::parse($data['latest_start'], 'Asia/Hong_Kong') : $start;
         $end = $latest->addMinutes($data['required_minutes']);
