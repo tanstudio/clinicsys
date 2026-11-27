@@ -40,6 +40,12 @@ git fetch origin
 sh deploy/build-release.sh origin/main main-<live commit>
 ```
 
+A release that adds migrations must be built with `--migrate`; without it, `apply.sh` stops when a migration is pending:
+
+```sh
+sh deploy/build-release.sh --migrate origin/main main-<live commit>
+```
+
 3. Run the read-only check. It signs in, confirms the live entry and scheduler, and saves the live `index.php` and stylesheets to `previous-public/`.
 
 ```sh
@@ -59,7 +65,9 @@ The password stays in process memory and is never written anywhere.
 
 1. Uploads the package to `~/clinic-releases/<release>/` and the new script asset to `public_html/assets/`.
 2. Creates a one-time cron job that runs `apply.sh`, waits for it, then deletes the cron job.
-3. `apply.sh` extracts the source, reuses the previous `vendor` through hard links, links the shared `storage` and `.env`, verifies every source checksum, stops if a migration is pending, dumps the database, compiles Blade views and lists routes.
+3. `apply.sh` extracts the source, reuses the previous `vendor` through hard links, links the shared `storage` and `.env`, verifies every source checksum and dumps the database to `pre-deploy-backup.sql`.
+   With pending migrations, it runs them only for a `--migrate` package, then confirms none is left; otherwise it stops.
+   It then compiles Blade views and lists routes.
 4. `apply.sh` points `public_html/index.php` at the new release, which is the switch.
 5. The client uploads the stylesheets to `public_html` and checks the live site through Cloudflare: status codes, and every versioned asset each page references against the package content.
 6. If any check fails, the client restores the previous `index.php` and stylesheets.
@@ -67,7 +75,10 @@ The password stays in process memory and is never written anywhere.
 
 ## Limits
 
-- `apply.sh` refuses to run a release with a pending migration. A migrating release needs an explicit migration step first.
+- Migrations run while the previous release is still live, before the switch. A migration must keep the previous release working: add tables and nullable columns; never drop or rename what the live code still reads.
+- A rollback after a migration restores code only. The schema stays migrated; undoing it means restoring `pre-deploy-backup.sql`, which also loses data written since the backup.
+- A failed migration leaves the previous release live and prints the migration output; restore `pre-deploy-backup.sql` if the schema changed partway.
+- `CLINIC_PHP` overrides the PHP path only for a local rehearsal; the server leaves it unset.
 - The server's `mysqldump` rejects `--set-gtid-purged`, so `backup.php` does not pass it.
 - `public_html/index.php` references the release by a path relative to the home directory, so `apply.sh` matches `/clinic-releases/<release>/public/index.php` without `$HOME`.
 - Rollback after the scheduler move is manual: upload `previous-public/index.php` and the stylesheets, then point the scheduler cron job back.
