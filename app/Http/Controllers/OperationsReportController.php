@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Loyalty;
 use App\Support\StaffAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -80,20 +81,32 @@ class OperationsReportController
                 'efficiency' => $capacity ? $completed / ($capacity * 0.5) : null,
             ];
         }
-        // Packages: sales and net redemptions in the period, and sessions left today in unexpired packages.
-        $sold = DB::table('receipts')->whereIn('branch_id', $scoped)->where('kind', 'package')
-            ->where('created_at', '>=', $utcFrom)->where('created_at', '<', $utcEnd)->groupBy('branch_id')
+        // Packages: sales, refunds and net use in the period, balances left today in open unexpired packages,
+        // and package income recognized under the head-office revenue basis.
+        $period = fn ($q, $column = 'created_at') => $q->where($column, '>=', $utcFrom)->where($column, '<', $utcEnd);
+        $sold = $period(DB::table('receipts')->whereIn('branch_id', $scoped)->where('kind', 'package'))->groupBy('branch_id')
             ->selectRaw('branch_id, COUNT(*) AS packages, SUM(amount_cents) AS cents')->get()->keyBy('branch_id');
-        $used = DB::table('package_ledger')->whereIn('branch_id', $scoped)->whereIn('kind', ['redeem', 'void'])
-            ->where('created_at', '>=', $utcFrom)->where('created_at', '<', $utcEnd)->groupBy('branch_id')
-            ->selectRaw('branch_id, -SUM(sessions) AS sessions')->pluck('sessions', 'branch_id');
+        $refunds = $period(DB::table('package_refunds')->whereIn('branch_id', $scoped))->groupBy('branch_id')
+            ->selectRaw('branch_id, COUNT(*) AS refunds, SUM(amount_cents) AS cents')->get()->keyBy('branch_id');
+        $size = "NULLIF(CASE WHEN p.kind = 'stored_value' THEN p.total_value_cents ELSE p.total_sessions END, 0)";
+        $used = $period(DB::table('package_ledger as l')->join('patient_packages as p', 'p.id', '=', 'l.package_id')
+            ->whereIn('l.branch_id', $scoped)->whereIn('l.kind', ['redeem', 'void']), 'l.created_at')->groupBy('l.branch_id')
+            ->selectRaw("l.branch_id, -SUM(l.sessions) AS sessions, -SUM(l.value_cents) AS value_cents,
+                -SUM((l.sessions + l.value_cents) * CAST(p.price_cents AS SIGNED) / $size) AS earned")->get()->keyBy('branch_id');
         $left = DB::table('package_ledger as l')->join('patient_packages as p', 'p.id', '=', 'l.package_id')
-            ->whereIn('p.sold_branch_id', $scoped)->where('p.expires_on', '>=', $today->toDateString())
-            ->groupBy('p.sold_branch_id')->selectRaw('p.sold_branch_id, SUM(l.sessions) AS sessions')->pluck('sessions', 'sold_branch_id');
+            ->whereIn('p.sold_branch_id', $scoped)->where('p.status', 'active')->where('p.expires_on', '>=', $today->toDateString())
+            ->groupBy('p.sold_branch_id')->selectRaw('p.sold_branch_id, SUM(l.sessions) AS sessions, SUM(l.value_cents) AS value_cents')
+            ->get()->keyBy('sold_branch_id');
+        $revenueBasis = Loyalty::settings()->revenue_basis;
         $packageStats = [];
         foreach ($scoped as $id) {
-            $packageStats[$id] = ['packages' => (int) ($sold[$id]->packages ?? 0), 'revenue' => ($sold[$id]->cents ?? 0) / 100,
-                'redeemed' => (int) ($used[$id] ?? 0), 'left' => (int) ($left[$id] ?? 0)];
+            $sales = (int) ($sold[$id]->cents ?? 0);
+            $refunded = (int) ($refunds[$id]->cents ?? 0);
+            $packageStats[$id] = ['packages' => (int) ($sold[$id]->packages ?? 0), 'revenue' => $sales / 100,
+                'refunds' => (int) ($refunds[$id]->refunds ?? 0), 'refunded' => $refunded / 100,
+                'redeemed' => (int) ($used[$id]->sessions ?? 0), 'value_used' => (int) ($used[$id]->value_cents ?? 0) / 100,
+                'left' => (int) ($left[$id]->sessions ?? 0), 'value_left' => (int) ($left[$id]->value_cents ?? 0) / 100,
+                'recognized' => ($revenueBasis === 'usage' ? (int) round($used[$id]->earned ?? 0) : $sales - $refunded) / 100];
         }
         if (($data['format'] ?? null) === 'csv') {
             return response()->streamDownload(function () use ($from, $to, $branches, $summary, $metrics) {
@@ -119,6 +132,6 @@ class OperationsReportController
                 'X-Content-Type-Options' => 'nosniff',
             ]);
         }
-        return view('commerce.reports', compact('from', 'to', 'branch', 'branches', 'summary', 'counts', 'metrics', 'metric', 'doctors', 'usage', 'packageStats'));
+        return view('commerce.reports', compact('from', 'to', 'branch', 'branches', 'summary', 'counts', 'metrics', 'metric', 'doctors', 'usage', 'packageStats', 'revenueBasis'));
     }
 }

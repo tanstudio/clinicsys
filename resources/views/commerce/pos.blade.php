@@ -16,14 +16,22 @@
 <button>確認收款及簽發收據</button>
 </form>
 @if($redeemable->isNotEmpty())
-<h2>以療程套票支付</h2>
-<p>每次扣減 1 次，並簽發 HK$0.00 收據。只列出服務、分店、有效期及餘額均符合的套票。</p>
+<h2>以套票或儲值支付</h2>
+<p>療程套票每次扣減 1 次；儲值按輸入金額扣減，餘額不足時不會扣減。兩者都簽發 HK$0.00 收據。只列出服務、分店、有效期、狀態及餘額均符合的套票。</p>
 @foreach($redeemable as $encounterId => $packages)
 @php($e = $encounters->firstWhere('id', $encounterId))
+@foreach($packages->groupBy('kind') as $kind => $group)
 <form method="post" action="{{ url('/staff/pos/redeem') }}">@csrf
 <input type="hidden" name="encounter_id" value="{{ $encounterId }}">
-<label>{{ $patients[$e->patient_id]->name }} · {{ $e->starts_at }} · #{{ $encounterId }} <select name="package_id">@foreach($packages as $p)<option value="{{ $p->id }}">{{ $p->name }} · 剩 {{ $p->left }} 次 · 至 {{ $p->expires_on }}</option>@endforeach</select></label>
-<button>使用套票扣減 1 次</button></form>
+<label>{{ $patients[$e->patient_id]->name }} · {{ $e->starts_at }} · #{{ $encounterId }} <select name="package_id">@foreach($group as $p)<option value="{{ $p->id }}">{{ $p->name }} · 餘額 {{ \App\Support\Loyalty::format($p, $p->left) }} · 至 {{ $p->expires_on }}</option>@endforeach</select></label>
+@if($kind === 'stored_value')
+<label>以儲值支付（HK$） <input type="number" name="amount" step="0.01" min="0.01" max="9999999.99" required></label>
+<button>使用儲值支付</button>
+@else
+<button>使用套票扣減 1 次</button>
+@endif
+</form>
+@endforeach
 @endforeach
 @endif
 @endif
@@ -32,12 +40,12 @@
 <label>收據流水號、完整收據或預約編號 <input name="reference" maxlength="36" value="{{ $filters['reference'] ?? '' }}"></label>
 <label>收款日期由 <input type="date" name="from" value="{{ $filters['from'] ?? '' }}"></label>
 <label>收款日期至 <input type="date" name="to" value="{{ $filters['to'] ?? '' }}"></label>
-<label>付款方式 <select name="method"><option value="">全部方式</option>@foreach(['cash'=>'現金','card'=>'銀行卡','fps'=>'轉數快','other'=>'其他','package'=>'療程套票'] as $key=>$name)<option value="{{ $key }}" @selected(($filters['method'] ?? '') === $key)>{{ $name }}</option>@endforeach</select></label>
+<label>付款方式 <select name="method"><option value="">全部方式</option>@foreach(['cash'=>'現金','card'=>'銀行卡','fps'=>'轉數快','other'=>'其他','package'=>'套票／儲值'] as $key=>$name)<option value="{{ $key }}" @selected(($filters['method'] ?? '') === $key)>{{ $name }}</option>@endforeach</select></label>
 <button>篩選收據</button><a href="/staff/pos">清除篩選</a>
 </form>
 <p>香港時間 · 符合條件 {{ $receipts->total() }} 張收據 · 合計 HK$ {{ number_format($totalCents / 100, 2) }}（含全部分頁）</p>
 <div class="sheet-scroll"><table><thead><tr><th>收據流水號</th><th>患者</th><th>收款時間</th><th>項目</th><th>付款方式</th><th>實收港元</th></tr></thead><tbody>
-@forelse($receipts as $r)<tr><td><a href="{{ url('/staff/pos/'.$r->id) }}">#{{ $r->id }}</a></td><td>{{ $patients[$r->patient_id]->name }}</td><td>{{ Carbon\Carbon::parse($r->created_at, 'UTC')->tz('Asia/Hong_Kong')->format('Y-m-d H:i') }}</td><td>{{ $r->description }}</td><td>{{ ['cash'=>'現金','card'=>'銀行卡','fps'=>'轉數快','other'=>'其他','package'=>'療程套票'][$r->method] }}</td><td>{{ number_format($r->amount_cents / 100, 2) }}</td></tr>
+@forelse($receipts as $r)<tr><td><a href="{{ url('/staff/pos/'.$r->id) }}">#{{ $r->id }}</a></td><td>{{ $patients[$r->patient_id]->name }}</td><td>{{ Carbon\Carbon::parse($r->created_at, 'UTC')->tz('Asia/Hong_Kong')->format('Y-m-d H:i') }}</td><td>{{ $r->description }}</td><td>{{ ['cash'=>'現金','card'=>'銀行卡','fps'=>'轉數快','other'=>'其他','package'=>'套票／儲值'][$r->method] }}</td><td>{{ number_format($r->amount_cents / 100, 2) }}</td></tr>
 @empty<tr><td colspan="6">找不到符合條件的收據。</td></tr>@endforelse
 </tbody></table></div>
 @if($receipts->previousPageUrl())<a href="{{ $receipts->previousPageUrl() }}">上一頁</a>@endif

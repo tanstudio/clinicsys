@@ -20,11 +20,12 @@
 <div class="sheet-scroll"><table><thead><tr><th>分店</th>@foreach($metrics as [$name,$unit])<th>{{ $name }}（{{ $unit }}）</th>@endforeach</tr></thead><tbody>
 @foreach($summary as $id=>$row)<tr><th>{{ $branches[$id] }}</th>@foreach($metrics as $key=>[$name,$unit])<td>{{ $row[$key] === null ? '—' : number_format($row[$key], $key === 'usage' ? 3 : 2) }}</td>@endforeach</tr>@endforeach
 </tbody></table></div>
-<h2>療程套票</h2>
-<div class="sheet-scroll"><table><thead><tr><th>分店</th><th>期內售出（套）</th><th>售出金額（HK$）</th><th>期內扣減（次）</th><th>未過期剩餘（次）</th></tr></thead><tbody>
-@foreach($packageStats as $id=>$p)<tr><th>{{ $branches[$id] }}</th><td>{{ $p['packages'] }}</td><td>{{ number_format($p['revenue'], 2) }}</td><td>{{ $p['redeemed'] }}</td><td>{{ $p['left'] }}</td></tr>@endforeach
+<h2>套票及儲值</h2>
+<div class="sheet-scroll"><table><thead><tr><th>分店</th><th>期內售出（套）</th><th>售出金額（HK$）</th><th>退款（宗）</th><th>退款金額（HK$）</th><th>期內扣減（次）</th><th>期內使用儲值（HK$）</th><th>未過期剩餘（次）</th><th>未過期儲值餘額（HK$）</th><th>套票收入確認（HK$）</th></tr></thead><tbody>
+@foreach($packageStats as $id=>$p)<tr><th>{{ $branches[$id] }}</th><td>{{ $p['packages'] }}</td><td>{{ number_format($p['revenue'], 2) }}</td><td>{{ $p['refunds'] }}</td><td>{{ number_format($p['refunded'], 2) }}</td><td>{{ $p['redeemed'] }}</td><td>{{ number_format($p['value_used'], 2) }}</td><td>{{ $p['left'] }}</td><td>{{ number_format($p['value_left'], 2) }}</td><td>{{ number_format($p['recognized'], 2) }}</td></tr>@endforeach
 </tbody></table></div>
-<p>售出金額已計入實收收入。期內扣減已減去撤銷次數。未過期剩餘按售出分店計算，以今日為準。</p>
+<p>售出金額已計入實收收入；退款金額未從實收收入扣除，請以本表核對。期內扣減及使用儲值已減去撤銷。剩餘按售出分店計算，只計可使用且未過期的套票，以今日為準。</p>
+<p>套票收入確認按總部設定：<strong>{{ \App\Support\Loyalty::BASES[$revenueBasis] }}</strong>。售出分店＝期內售出金額減期內退款；使用分店＝期內每次使用按已付價錢攤分的金額，過期未用的餘額不確認。</p>
 <h2>醫師效率</h2>
 <div class="sheet-scroll"><table><thead><tr><th>分店</th><th>醫師</th><th>已記錄診次</th><th>排班時數</th><th>診次／小時</th></tr></thead><tbody>
 @forelse($doctors as $d)<tr><td>{{ $branches[$d->branch_id] }}</td><td>{{ $d->name_zh }}</td><td>{{ $d->completed }}</td><td>{{ number_format($d->capacity * 0.5, 1) }}</td><td>{{ number_format($d->completed / ($d->capacity * 0.5), 2) }}</td></tr>@empty<tr><td colspan="5">此期間沒有排班。</td></tr>@endforelse

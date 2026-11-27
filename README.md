@@ -70,7 +70,7 @@ Filter inventory movements by exact herb name, operation and Hong Kong date rang
 The report screen exports the selected branches and dates as a UTF-8 CSV containing all six summary measures.
 CSV ratios with no denominator remain blank, and spreadsheet formula prefixes in branch names are escaped.
 
-## Customer tiers and session packages
+## Customer tiers, packages and stored value
 
 Head office edits tier and package rules at `/staff/loyalty`; no tier, price or session count lives in code.
 A tier has a spend threshold in HKD, a rolling number of months and a consultation discount percentage.
@@ -80,8 +80,15 @@ A plan has one service, sessions, bonus sessions, a price, a validity in days an
 Reception sells a plan on the patient page; the sale issues a package receipt and copies the plan's values, so later rule changes never alter a sold package.
 At POS, a finished visit can be paid with one session of an eligible package: same service, allowed branch, unexpired and with sessions left.
 A redemption issues an HKD 0 receipt; a branch administrator can void it with a reason, which returns the session and the unpaid visit.
-The report screen lists package sales, net redemptions and unexpired sessions left per branch.
-Stored value, refunds, transfers and WhatsApp balance notices are planned for phase 2.
+A plan is either a session package or stored value; stored value has an amount and a bonus amount and pays for any service.
+At POS, stored value pays the amount reception enters, and is refused when the balance is insufficient.
+Each plan sets whether it is refundable, its refund fee percentage and whether it is transferable; a sold package keeps those terms.
+A branch administrator refunds the whole remaining balance at the paid share of the price less the fee, which closes the package.
+A branch administrator transfers the whole remaining balance to another patient of the branch, identified by name and phone; the expiry stays.
+Head office chooses the package revenue basis: the selling branch at sale, or the redeeming branch at each use at the paid share of the price.
+Head office turns WhatsApp balance notices on or off; each purchase, use, void, refund and transfer then notifies the package owner.
+A balance notice needs the owner's latest booking to have WhatsApp notification consent and an approved `package` template.
+The report screen lists package sales, refunds, net use, unexpired balances and recognized package income per branch.
 
 ## Notifications and privacy review
 
@@ -89,13 +96,13 @@ Run `php artisan schedule:work` in a separate local process or run `php artisan 
 The worker projects appointment events, receipts and completed visits into the outbox.
 WhatsApp connects directly to Meta Cloud API; SleekFlow is no longer used by the application.
 Configure the private WHATSAPP_* environment values and subscribe `/webhooks/whatsapp` in Meta.
-Head office manages the shared-number reception branch and seven text-body template mappings at `/staff/whatsapp`.
+Head office manages the shared-number reception branch and eight text-body template mappings at `/staff/whatsapp`.
 The inbox provides branch routing, keyword synonyms, persistent human handoff and delivery receipts.
 Unknown questions go to reception; generative AI answers are not implemented.
 See [native WhatsApp setup and verification](b1.reports/261106-native-whatsapp.md) for credentials, supported message types and remaining live tests.
 Run `php artisan clinic:whatsapp-check` before connecting Meta.
 Use `--json` for a secret-free configuration report.
-The command checks 16 local prerequisites and never makes a Meta request.
+The command checks 17 local prerequisites and never makes a Meta request.
 A passing result does not verify token permissions, template approval or handset delivery.
 See [Meta readiness and remaining live tests](b1.reports/261109-meta-readiness.md) for the current verification evidence.
 Email uses SMTP; the production Resend sender has been configured and accepted separately.

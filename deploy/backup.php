@@ -1,10 +1,13 @@
 <?php
 
-// Private pre-deployment database dump. Runs on the server inside the new release directory.
+// Private database dump before a deployment or a one-off task. Runs on the server.
+// Usage: php backup.php [application directory] [output file]; both default to this file's directory and
+// pre-deploy-backup.sql, which is how apply.sh calls it inside a new release.
 // Credentials come from the shared .env through Laravel config and stay in a 0600 file removed after use.
 
-require __DIR__.'/vendor/autoload.php';
-$app = require __DIR__.'/bootstrap/app.php';
+$root = $argv[1] ?? __DIR__;
+require $root.'/vendor/autoload.php';
+$app = require $root.'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
 $c = config('database.connections.'.config('database.default'));
@@ -16,7 +19,7 @@ if (!empty($c['port'])) {
 $file = tempnam(__DIR__, 'mysql');
 chmod($file, 0600);
 file_put_contents($file, $options);
-$out = __DIR__.'/pre-deploy-backup.sql';
+$out = $argv[2] ?? __DIR__.'/pre-deploy-backup.sql';
 // The server's mysqldump rejects --set-gtid-purged, so this release does not pass it.
 $process = proc_open(['mysqldump', '--defaults-extra-file='.$file, '--single-transaction', '--no-tablespaces',
     $c['database']], [1 => ['file', $out, 'w'], 2 => ['pipe', 'w']], $pipes);

@@ -20,7 +20,7 @@
 </form>@endif
 <h2>通知範本</h2>
 <p>先在 Meta 核准範本，再填寫名稱、語言及內文變數。變數以逗號分隔，順序對應 @verbatim{{1}}、{{2}}@endverbatim。未啟用的範本不會發送。</p>
-<p>可用變數：reference＝預約或收據編號；starts_at＝香港預約時間；branch_name＝分店名稱；amount＝收款金額；body＝推廣內容。此版本支援純文字內文及固定文字範本。</p>
+<p>可用變數：reference＝預約或收據編號；starts_at＝香港預約時間；branch_name＝分店名稱；amount＝收款金額；body＝推廣內容；package_name＝套票名稱；change＝本次變動；balance＝最新餘額；expires_on＝有效期。此版本支援純文字內文及固定文字範本。</p>
 @foreach($kinds as $kind=>$label)
 @php($template = $templates[$kind] ?? null)
 <details><summary>{{ $label }} · {{ $template?->approved ? '已啟用' : '未啟用' }}</summary>

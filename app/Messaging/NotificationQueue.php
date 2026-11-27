@@ -12,7 +12,7 @@ class NotificationQueue
 {
     public function collect(): void
     {
-        foreach (['appointment_events','receipts','encounters'] as $source) {
+        foreach (['appointment_events','receipts','encounters','package_ledger'] as $source) {
             if (!Schema::hasTable($source)) {
                 continue;
             }
@@ -31,6 +31,10 @@ class NotificationQueue
 
     private function collectOne(string $source, object $row): void
     {
+        if ($source === 'package_ledger') {
+            $this->collectPackage($row);
+            return;
+        }
         $appointment = Appointment::find($row->appointment_id);
         if (!$appointment) {
             return;
@@ -58,7 +62,7 @@ class NotificationQueue
             $branch = $slot->branch_id;
             $parameters = ['reference'=>$appointment->reference,'starts_at'=>$slot->starts_at.' (Hong Kong)'];
         } elseif ($source === 'receipts') {
-            // A package redemption is an HKD 0 receipt; package balance notices are planned for phase 2.
+            // A package redemption is an HKD 0 receipt; its balance notice comes from the package ledger.
             if ($row->method === 'package') {
                 return;
             }
@@ -91,5 +95,34 @@ class NotificationQueue
                 }
             }
         }
+    }
+
+    /**
+     * One balance notice per package ledger row, to the package owner, when head office has notices on.
+     * WhatsApp only, linked to the owner's latest appointment so delivery re-checks that booking's notification consent.
+     */
+    private function collectPackage(object $row): void
+    {
+        if (!\App\Support\Loyalty::settings()->balance_notices) {
+            return;
+        }
+        $package = DB::table('patient_packages')->find($row->package_id);
+        $appointment = Appointment::where('patient_id', $package->patient_id)->orderByDesc('id')->first();
+        if (!$appointment || !$appointment->whatsapp_opt_in) {
+            return;
+        }
+        $balance = (int) DB::table('package_ledger')->where('package_id', $package->id)->where('id', '<=', $row->id)
+            ->selectRaw('COALESCE(SUM(sessions) + SUM(value_cents), 0) AS balance')->value('balance');
+        $change = $row->sessions + $row->value_cents;
+        $format = fn (int $amount) => $package->kind === 'stored_value' ? 'HKD '.number_format($amount / 100, 2) : $amount.' 次 sessions';
+        $action = ['purchase'=>'購買 Purchase','redeem'=>'使用 Used','void'=>'撤銷使用 Use reversed','refund'=>'退款 Refunded',
+            'transfer_out'=>'轉出 Transferred out','transfer_in'=>'轉入 Transferred in'][$row->kind] ?? $row->kind;
+        $parameters = ['package_name'=>$package->name, 'change'=>$action.' '.($change > 0 ? '+' : '').$format($change),
+            'balance'=>$format($balance), 'expires_on'=>$package->expires_on,
+            'branch_name'=>DB::table('branches')->where('id', $row->branch_id)->value('name_zh')];
+        $body = "套票餘額 / Package balance · $package->name · {$parameters['change']} · 餘額 Balance {$parameters['balance']} · 有效至 Valid until $package->expires_on";
+        $patient = Patient::findOrFail($package->patient_id);
+        $thread = Inbox::thread($row->branch_id, $patient->phone, $patient->id);
+        Inbox::enqueue($thread, "package_ledger:$row->id:wa", 'package', $body, 'whatsapp', null, now(), null, $appointment->id, $parameters);
     }
 }

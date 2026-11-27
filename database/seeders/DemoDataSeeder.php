@@ -150,10 +150,16 @@ class DemoDataSeeder extends Seeder
     // [name, threshold HKD, rolling months, consultation discount %]. Head office can change these in /staff/loyalty.
     private bool $voidShown = false;
     public const DEMO_TIERS = [['銀卡', 1500, 12, 5], ['金卡', 4000, 12, 10]];
-    // [name, service index, sessions, bonus sessions, price HKD, validity days, branch indexes or null for all].
+    // [name, service index, sessions, bonus sessions, price HKD, validity days, branch indexes or null for all,
+    //  refundable, refund fee %, transferable].
     public const DEMO_PLANS = [
-        ['針灸十次套票', 1, 10, 1, 4200, 365, null], ['推拿五次套票', 2, 5, 0, 1900, 180, null],
-        ['中醫內科八次套票', 0, 8, 0, 2100, 240, null], ['拔罐體驗三次', 3, 3, 0, 780, 30, [0]],
+        ['針灸十次套票', 1, 10, 1, 4200, 365, null, true, 15, false], ['推拿五次套票', 2, 5, 0, 1900, 180, null, true, 10, true],
+        ['中醫內科八次套票', 0, 8, 0, 2100, 240, null, true, 10, true], ['拔罐體驗三次', 3, 3, 0, 780, 30, [0], false, 0, false],
+    ];
+    // [name, stored value HKD, bonus value HKD, price HKD, validity days, branch indexes or null, refundable, refund fee %, transferable].
+    public const DEMO_STORED = [
+        ['儲值 HK$2,000 送 HK$200', 2000, 200, 2000, 365, null, true, 10, true],
+        ['儲值 HK$5,000 送 HK$800', 5000, 800, 5000, 730, null, false, 0, true],
     ];
     public const MOVEMENT_MARK = ' · 示範數據';
     // Stocked but not prescribed, so the stock list also shows slow-moving herbs.
@@ -165,10 +171,19 @@ class DemoDataSeeder extends Seeder
     private const FEES = ['中醫內科' => 280, '針灸' => 450, '推拿' => 400, '拔罐' => 300];
     private const TEMPLATES = ['失眠調理' => '失眠', '腰背痛針灸' => '腰背痛', '鼻敏感調理' => '鼻敏感', '產後調理' => '產後調理'];
 
+    /**
+     * Local and testing always; production only for one process started with CLINIC_DEMO_DATA=production,
+     * which deploy/task.py sets after a database backup. The variable is never stored in .env.
+     */
+    public static function allowed(): bool
+    {
+        return app()->environment('local', 'testing') || getenv('CLINIC_DEMO_DATA') === 'production';
+    }
+
     public function run(): void
     {
-        if (!app()->environment('local', 'testing')) {
-            throw new \RuntimeException('Demonstration data currently requires a local or testing environment.');
+        if (!self::allowed()) {
+            throw new \RuntimeException('Demonstration data requires a local or testing environment, or CLINIC_DEMO_DATA=production from deploy/task.py.');
         }
         // The head-office administrator reviews the HR officer's own leave and records anything without a demo doctor.
         $admin = DB::table('staff_accounts')->where('active', true)->where('role', 'admin')->whereNull('branch_id')->orderBy('id')->value('id');
@@ -179,15 +194,15 @@ class DemoDataSeeder extends Seeder
         $this->slots($catalog);
         $summary = array_fill_keys(['staff_accounts', 'patients', 'booked', 'rescheduled', 'cancelled', 'past_visits', 'encounters',
             'past_cancelled', 'past_without_record', 'templates', 'followups', 'receipts', 'awaiting_payment',
-            'tiers', 'plans', 'packages_sold', 'redemptions', 'voids'], 0);
+            'tiers', 'plans', 'packages_sold', 'redemptions', 'voids', 'stored_value_sold', 'stored_value_payments', 'refunds', 'transfers'], 0);
         $staff = $this->staff($catalog, $summary);
         $summary['templates'] = $this->templates($catalog, $staff['branch_doctors'], $admin);
         $plans = $this->loyaltyRules($catalog, $summary);
         $patients = [];
         for ($i = 0; $i < self::PATIENTS; $i++) {
             [$name, $phone] = $this->person($i);
-            // Matches the identity rule in CreateAppointment, so both paths share one patient row.
-            $key = hash_hmac('sha256', Str::lower($name).'|'.PatientPhone::identity($phone), config('app.key'));
+            // The identity rule of CreateAppointment, so both paths share one patient row.
+            $key = PatientPhone::patientKey($name, $phone);
             $patient = Patient::firstOrCreate(['identity_key' => $key], ['name' => $name, 'phone' => PatientPhone::international($phone)]);
             $summary['patients']++;
             $branch = $catalog['branches'][$i % count(self::BRANCHES)];
@@ -204,6 +219,7 @@ class DemoDataSeeder extends Seeder
             $this->receipts($patient, $seller, $i, $summary);
             $patients[] = $patient->id;
         }
+        $this->closures($patients, $staff, $summary);
         $summary['recorders_assigned'] = $this->assignRecorders($patients, $staff['doctors']);
         $summary += $this->inventory($catalog, $patients);
         $summary += $this->hr($catalog, $staff, $admin);
@@ -222,7 +238,7 @@ class DemoDataSeeder extends Seeder
     private function drainProjections(): int
     {
         $pending = function () {
-            foreach (['appointment_events', 'encounters', 'receipts'] as $source) {
+            foreach (['appointment_events', 'encounters', 'receipts', 'package_ledger'] as $source) {
                 if (DB::table("$source as s")->whereNotExists(fn ($q) => $q->selectRaw('1')->from('message_projections as m')
                     ->where('m.source', $source)->whereColumn('m.source_id', 's.id'))->exists()) {
                     return true;
@@ -535,8 +551,8 @@ class DemoDataSeeder extends Seeder
             }
             $paidAt = $recorded->addMinutes(5 + $encounter->id % 11);
             $visitDay = $recorded->setTimezone('Asia/Hong_Kong')->toDateString();
-            $package = DB::table('patient_packages')->where('patient_id', $patient->id)->where('service_id', $encounter->service_id)
-                ->where('starts_on', '<=', $visitDay)->where('expires_on', '>=', $visitDay)->where('created_at', '<', $recorded)
+            $package = DB::table('patient_packages')->where('patient_id', $patient->id)->where('kind', 'sessions')
+                ->where('service_id', $encounter->service_id)->where('starts_on', '<=', $visitDay)->where('expires_on', '>=', $visitDay)->where('created_at', '<', $recorded)
                 ->orderBy('expires_on')->orderBy('id')->get()
                 ->first(fn ($p) => in_array($encounter->branch_id, json_decode($p->allowed_branches, true), true)
                     && Loyalty::balances([$p->id])[$p->id] > 0);
@@ -569,11 +585,32 @@ class DemoDataSeeder extends Seeder
             $record = Encounter::findOrFail($encounter->id)->clinical_record;
             $doses = str_contains($record['prescription'] ?? '', '七劑') ? 7 : (str_contains($record['prescription'] ?? '', '五劑') ? 5 : 0);
             $fee = self::FEES[$encounter->service] ?? 300;
+            $charge = ($fee + $doses * 48) * 100;
+            // Stored value pays the whole visit when its balance covers it, as reception would enter at POS.
+            $stored = $package ? null : DB::table('patient_packages')->where('patient_id', $patient->id)->where('kind', 'stored_value')
+                ->where('starts_on', '<=', $visitDay)->where('expires_on', '>=', $visitDay)->where('created_at', '<', $recorded)
+                ->orderBy('expires_on')->orderBy('id')->get()
+                ->first(fn ($p) => in_array($encounter->branch_id, json_decode($p->allowed_branches, true), true)
+                    && Loyalty::balances([$p->id])[$p->id] >= $charge);
+            if ($stored) {
+                $left = Loyalty::balances([$stored->id])[$stored->id] - $charge;
+                $reference = (string) Str::uuid();
+                DB::table('receipts')->insert(['reference' => $reference, 'branch_id' => $encounter->branch_id, 'patient_id' => $patient->id,
+                    'appointment_id' => $encounter->appointment_id, 'encounter_id' => $encounter->id, 'kind' => 'redeem',
+                    'description' => '使用儲值：'.$stored->name.' 扣 '.Loyalty::format($stored, $charge).'（餘額 '.Loyalty::format($stored, $left).'）',
+                    'amount_cents' => 0, 'method' => 'package', 'created_at' => $paidAt]);
+                DB::table('package_ledger')->insert(['reference' => (string) Str::uuid(), 'package_id' => $stored->id, 'kind' => 'redeem',
+                    'sessions' => 0, 'value_cents' => -$charge, 'encounter_id' => $encounter->id, 'receipt_reference' => $reference,
+                    'branch_id' => $encounter->branch_id, 'staff_id' => $seller, 'created_at' => $paidAt]);
+                $summary['stored_value_payments']++;
+                $this->project($paidAt);
+                continue;
+            }
             $slot = ($encounter->id * 7 + $patient->id) % 20;
             DB::table('receipts')->insert(['reference' => (string) Str::uuid(), 'branch_id' => $encounter->branch_id,
                 'patient_id' => $patient->id, 'appointment_id' => $encounter->appointment_id, 'encounter_id' => $encounter->id,
                 'description' => $encounter->service.'診金 HK$'.$fee.($doses ? '、中藥 '.$doses.' 劑' : ''),
-                'amount_cents' => ($fee + $doses * 48) * 100,
+                'amount_cents' => $charge,
                 'method' => $package ? 'cash' : ($slot < 6 ? 'cash' : ($slot < 11 ? 'card' : ($slot < 18 ? 'fps' : 'other'))),
                 'created_at' => $paidAt]);
             $summary['receipts']++;
@@ -592,12 +629,21 @@ class DemoDataSeeder extends Seeder
             }
         }
         $plans = [];
-        foreach (self::DEMO_PLANS as [$name, $service, $sessions, $bonus, $price, $days, $branches]) {
+        $rows = [];
+        foreach (self::DEMO_PLANS as [$name, $service, $sessions, $bonus, $price, $days, $branches, $refundable, $fee, $transferable]) {
+            $rows[$name] = [['kind' => 'sessions', 'service_id' => $catalog['services'][$service], 'sessions' => $sessions,
+                'bonus_sessions' => $bonus, 'price_cents' => $price * 100, 'validity_days' => $days, 'refundable' => $refundable,
+                'refund_fee_percent' => $fee, 'transferable' => $transferable], $branches];
+        }
+        foreach (self::DEMO_STORED as [$name, $value, $bonus, $price, $days, $branches, $refundable, $fee, $transferable]) {
+            $rows[$name] = [['kind' => 'stored_value', 'service_id' => null, 'sessions' => 0, 'bonus_sessions' => 0,
+                'value_cents' => $value * 100, 'bonus_value_cents' => $bonus * 100, 'price_cents' => $price * 100, 'validity_days' => $days,
+                'refundable' => $refundable, 'refund_fee_percent' => $fee, 'transferable' => $transferable], $branches];
+        }
+        foreach ($rows as $name => [$row, $branches]) {
             $id = DB::table('package_plans')->where('name', $name)->value('id');
             if (!$id) {
-                $id = DB::table('package_plans')->insertGetId(['name' => $name, 'service_id' => $catalog['services'][$service],
-                    'sessions' => $sessions, 'bonus_sessions' => $bonus, 'price_cents' => $price * 100, 'validity_days' => $days,
-                    'active' => true, 'created_at' => now(), 'updated_at' => now()]);
+                $id = DB::table('package_plans')->insertGetId(['name' => $name, 'active' => true, 'created_at' => now(), 'updated_at' => now()] + $row);
                 $allowed = $branches === null ? $catalog['branches'] : array_map(fn ($b) => $catalog['branches'][$b], $branches);
                 DB::table('package_plan_branches')->insert(array_map(fn ($b) => ['plan_id' => $id, 'branch_id' => $b], $allowed));
                 $summary['plans']++;
@@ -637,22 +683,91 @@ class DemoDataSeeder extends Seeder
         if ($i === 6) {
             $sales[] = [$plans['拔罐體驗三次'], $today->subDays(50)->setTime(12, 0)];
         }
+        // Stored value: every fifth patient from patient 3 tops up 45 days ago; patient 23 buys the larger amount.
+        if ($i % 5 === 3) {
+            $sales[] = [$plans[self::DEMO_STORED[$i === 23 ? 1 : 0][0]], $today->subDays(45)->setTime(11, 15)];
+        }
         foreach ($sales as $n => [$planId, $soldAt]) {
             $plan = DB::table('package_plans')->find($planId);
             $allowed = DB::table('package_plan_branches')->where('plan_id', $planId)->pluck('branch_id')->map(fn ($b) => (int) $b)->all();
+            $stored = $plan->kind === 'stored_value';
             $total = $plan->sessions + $plan->bonus_sessions;
+            $value = $plan->value_cents + $plan->bonus_value_cents;
             $receipt = DB::table('receipts')->insertGetId(['reference' => (string) Str::uuid(), 'branch_id' => $branch, 'patient_id' => $patient->id,
-                'appointment_id' => null, 'encounter_id' => null, 'kind' => 'package', 'description' => '購買療程套票：'.$plan->name,
+                'appointment_id' => null, 'encounter_id' => null, 'kind' => 'package', 'description' => ($stored ? '購買儲值：' : '購買療程套票：').$plan->name,
                 'amount_cents' => $plan->price_cents, 'method' => ['card', 'fps', 'cash'][($i + $n) % 3], 'created_at' => $soldAt->utc()]);
             $package = DB::table('patient_packages')->insertGetId(['reference' => (string) Str::uuid(), 'patient_id' => $patient->id,
                 'plan_id' => $planId, 'sold_branch_id' => $branch, 'service_id' => $plan->service_id, 'name' => $plan->name,
-                'total_sessions' => $total, 'price_cents' => $plan->price_cents, 'allowed_branches' => json_encode($allowed),
+                'kind' => $plan->kind, 'total_sessions' => $total, 'total_value_cents' => $value, 'price_cents' => $plan->price_cents,
+                'refundable' => $plan->refundable, 'refund_fee_percent' => $plan->refund_fee_percent, 'transferable' => $plan->transferable,
+                'allowed_branches' => json_encode($allowed),
                 'starts_on' => $soldAt->toDateString(), 'expires_on' => $soldAt->addDays($plan->validity_days - 1)->toDateString(),
                 'receipt_id' => $receipt, 'sold_by' => $seller, 'created_at' => $soldAt->utc(), 'updated_at' => $soldAt->utc()]);
             DB::table('package_ledger')->insert(['reference' => (string) Str::uuid(), 'package_id' => $package, 'kind' => 'purchase',
-                'sessions' => $total, 'branch_id' => $branch, 'staff_id' => $seller, 'created_at' => $soldAt->utc()]);
-            $summary['packages_sold']++;
+                'sessions' => $stored ? 0 : $total, 'value_cents' => $stored ? $value : 0, 'branch_id' => $branch, 'staff_id' => $seller,
+                'created_at' => $soldAt->utc()]);
+            $summary[$stored ? 'stored_value_sold' : 'packages_sold']++;
             $this->project($soldAt);
+        }
+    }
+
+    /**
+     * Ends two packages the way a branch administrator would, once per fresh run:
+     * the first unused refundable session package is refunded yesterday at the paid share less its fee, and
+     * the first transferable stored value with a balance moves to the next demo patient of the same branch today.
+     */
+    private function closures(array $patients, array $staff, array &$summary): void
+    {
+        // The 旺角 branch administrator handles both, at that branch.
+        $manager = $staff['ids'][8];
+        $managed = (int) DB::table('staff_accounts')->where('id', $manager)->value('branch_id');
+        $open = fn () => DB::table('patient_packages')->whereIn('patient_id', $patients)->where('status', 'active')->where('sold_branch_id', $managed)
+            ->where('expires_on', '>=', Loyalty::today())->orderBy('id')->get()
+            ->map(fn ($p) => (object) ((array) $p + ['left' => Loyalty::balances([$p->id])[$p->id]]));
+        if (!DB::table('package_refunds')->whereIn('patient_id', $patients)->exists()
+            && ($item = $open()->first(fn ($p) => $p->kind === 'sessions' && $p->refundable && $p->left === Loyalty::size($p)))) {
+            $at = CarbonImmutable::today('Asia/Hong_Kong')->subDay()->setTime(16, 40);
+            $quote = Loyalty::refundQuote($item, $item->left);
+            $this->at($at, function () use ($item, $quote, $manager) {
+                DB::table('package_refunds')->insert(['reference' => (string) Str::uuid(), 'package_id' => $item->id,
+                    'branch_id' => $item->sold_branch_id, 'patient_id' => $item->patient_id, 'amount_cents' => $quote['amount'],
+                    'fee_cents' => $quote['fee'], 'method' => 'card', 'reason' => '患者搬遷，未使用療程退款', 'staff_id' => $manager, 'created_at' => now('UTC')]);
+                DB::table('package_ledger')->insert(['reference' => (string) Str::uuid(), 'package_id' => $item->id, 'kind' => 'refund',
+                    'sessions' => -$item->left, 'value_cents' => 0, 'branch_id' => $item->sold_branch_id, 'staff_id' => $manager,
+                    'reason' => '患者搬遷，未使用療程退款', 'created_at' => now('UTC')]);
+                DB::table('patient_packages')->where('id', $item->id)->update(['status' => 'refunded', 'closed_at' => now('UTC'), 'updated_at' => now()]);
+                app(NotificationQueue::class)->collect();
+            });
+            $summary['refunds']++;
+        }
+        if (!DB::table('package_ledger as l')->join('patient_packages as p', 'p.id', '=', 'l.package_id')
+            ->whereIn('p.patient_id', $patients)->where('l.kind', 'transfer_out')->exists()
+            && ($item = $open()->first(fn ($p) => $p->kind === 'stored_value' && $p->transferable && $p->left > 0))) {
+            $branchOf = fn ($patient) => DB::table('appointments as a')->join('slots as s', 's.id', '=', 'a.slot_id')
+                ->where('a.patient_id', $patient)->orderBy('a.id')->value('s.branch_id');
+            $to = collect($patients)->first(fn ($id) => $id !== $item->patient_id && $branchOf($id) === $branchOf($item->patient_id)
+                && !DB::table('patient_packages')->where('patient_id', $id)->where('kind', 'stored_value')->exists());
+            if ($to) {
+                $at = CarbonImmutable::today('Asia/Hong_Kong')->setTime(10, 5);
+                $this->at($at, function () use ($item, $to, $manager, $branchOf) {
+                    $branch = $branchOf($item->patient_id);
+                    $copy = DB::table('patient_packages')->insertGetId(['reference' => (string) Str::uuid(), 'patient_id' => $to,
+                        'plan_id' => $item->plan_id, 'sold_branch_id' => $item->sold_branch_id, 'service_id' => null, 'name' => $item->name,
+                        'kind' => 'stored_value', 'total_sessions' => 0, 'total_value_cents' => $item->left,
+                        'price_cents' => Loyalty::worth($item, $item->left), 'refundable' => $item->refundable,
+                        'refund_fee_percent' => $item->refund_fee_percent, 'transferable' => $item->transferable,
+                        'allowed_branches' => $item->allowed_branches, 'starts_on' => Loyalty::today(), 'expires_on' => $item->expires_on,
+                        'receipt_id' => null, 'sold_by' => $manager, 'created_at' => now(), 'updated_at' => now()]);
+                    foreach ([[$item->id, 'transfer_out', -$item->left, $copy], [$copy, 'transfer_in', $item->left, $item->id]] as [$package, $kind, $value, $related]) {
+                        DB::table('package_ledger')->insert(['reference' => (string) Str::uuid(), 'package_id' => $package, 'kind' => $kind,
+                            'sessions' => 0, 'value_cents' => $value, 'branch_id' => $branch, 'staff_id' => $manager,
+                            'reason' => '轉讓給家人使用', 'related_package_id' => $related, 'created_at' => now('UTC')]);
+                    }
+                    DB::table('patient_packages')->where('id', $item->id)->update(['status' => 'transferred', 'closed_at' => now('UTC'), 'updated_at' => now()]);
+                    app(NotificationQueue::class)->collect();
+                });
+                $summary['transfers']++;
+            }
         }
     }
 
