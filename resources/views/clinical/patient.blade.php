@@ -22,28 +22,57 @@
     <button>更新等級</button>
 </form>
 @endif
-<div class="sheet-scroll"><table><thead><tr><th>套票</th><th>服務</th><th>剩餘／總次數</th><th>有效期</th><th>狀態</th></tr></thead><tbody>
-@forelse($packages as $p)<tr><td>{{ $p->name }}</td><td>{{ $p->service }}</td><td>{{ $balances[$p->id] }}／{{ $p->total_sessions }}</td>
+<div class="sheet-scroll"><table><thead><tr><th>套票</th><th>類型及服務</th><th>餘額／總額</th><th>有效期</th><th>條款</th><th>狀態</th></tr></thead><tbody>
+@forelse($packages as $p)
+@php($left = $balances[$p->id])
+<tr><td>{{ $p->name }}</td><td>{{ \App\Support\Loyalty::KINDS[$p->kind] }} · {{ $p->service ?? '任何服務' }}</td>
+<td>{{ \App\Support\Loyalty::format($p, $left) }}／{{ \App\Support\Loyalty::format($p, \App\Support\Loyalty::size($p)) }}</td>
 <td>{{ $p->starts_on }} 至 {{ $p->expires_on }}</td>
-<td>{{ $p->expires_on < $today ? '已過期' : ($balances[$p->id] > 0 ? '可使用' : '已用完') }}</td></tr>
-@empty<tr><td colspan="5">暫無療程套票。</td></tr>@endforelse
+<td>{{ $p->refundable ? '可退款（手續費 '.$p->refund_fee_percent.'%）' : '不設退款' }} · {{ $p->transferable ? '可轉讓' : '不可轉讓' }}</td>
+<td>{{ $p->status !== 'active' ? \App\Support\Loyalty::STATUSES[$p->status] : ($p->expires_on < $today ? '已過期' : ($left > 0 ? '可使用' : '已用完')) }}</td></tr>
+@if(\App\Support\StaffAccess::can('admin') && $left > 0 && \App\Support\Loyalty::usable($p, $branch, $today) && ($p->refundable || $p->transferable))
+<tr><td colspan="6">
+@if($p->refundable)
+@php($quote = \App\Support\Loyalty::refundQuote($p, $left))
+<form method="post" action="/staff/packages/{{ $p->id }}/refund">@csrf
+<p>退款：剩餘價值 HK$ {{ number_format($quote['gross'] / 100, 2) }}，手續費 HK$ {{ number_format($quote['fee'] / 100, 2) }}，退還 <strong>HK$ {{ number_format($quote['amount'] / 100, 2) }}</strong>；退款後套票結束。</p>
+<label>退款方式 <select name="method">@foreach(['cash'=>'現金','card'=>'銀行卡','fps'=>'轉數快','other'=>'其他'] as $key=>$name)<option value="{{ $key }}">{{ $name }}</option>@endforeach</select></label>
+<label>退款原因 <input name="reason" maxlength="200" required></label>
+<button>確認退款</button></form>
+@endif
+@if($p->transferable)
+<form method="post" action="/staff/packages/{{ $p->id }}/transfer">@csrf
+<p>轉讓：把全部餘額 {{ \App\Support\Loyalty::format($p, $left) }} 轉給曾在本分店預約的另一名患者，有效期不變。</p>
+<label>受讓人姓名 <input name="name" maxlength="80" required></label>
+<label>受讓人電話 <input name="phone" maxlength="16" inputmode="tel" required></label>
+<label>轉讓原因 <input name="reason" maxlength="200" required></label>
+<button>確認轉讓</button></form>
+@endif
+</td></tr>
+@endif
+@empty<tr><td colspan="6">暫無套票或儲值。</td></tr>@endforelse
 </tbody></table></div>
 @if($ledger->isNotEmpty())
 <details><summary>套票使用紀錄</summary>
-<div class="sheet-scroll"><table><thead><tr><th>時間（香港）</th><th>套票</th><th>操作</th><th>次數</th><th>分店</th><th>診症</th><th>備註</th></tr></thead><tbody>
-@foreach($ledger as $l)<tr><td>{{ \Illuminate\Support\Carbon::parse($l->created_at, 'UTC')->tz('Asia/Hong_Kong')->format('Y-m-d H:i') }}</td>
-<td>{{ $packages->firstWhere('id', $l->package_id)->name }}</td>
-<td>{{ ['purchase'=>'購買','redeem'=>'扣減','void'=>'撤銷扣減'][$l->kind] ?? $l->kind }}</td><td>{{ $l->sessions > 0 ? '+'.$l->sessions : $l->sessions }}</td>
+<div class="sheet-scroll"><table><thead><tr><th>時間（香港）</th><th>套票</th><th>操作</th><th>變動</th><th>分店</th><th>診症</th><th>備註</th></tr></thead><tbody>
+@foreach($ledger as $l)
+@php($owner = $packages->firstWhere('id', $l->package_id))
+<tr><td>{{ \Illuminate\Support\Carbon::parse($l->created_at, 'UTC')->tz('Asia/Hong_Kong')->format('Y-m-d H:i') }}</td>
+<td>{{ $owner->name }}</td>
+<td>{{ ['purchase'=>'購買','redeem'=>'扣減','void'=>'撤銷扣減','refund'=>'退款','transfer_out'=>'轉出','transfer_in'=>'轉入'][$l->kind] ?? $l->kind }}</td>
+@php($change = $l->sessions + $l->value_cents)
+<td>{{ $change > 0 ? '+' : '' }}{{ $owner->kind === 'stored_value' ? 'HK$ '.number_format($change / 100, 2) : $change.' 次' }}</td>
 <td>{{ $l->branch }}</td><td>{{ $l->encounter_id ? '#'.$l->encounter_id : '—' }}</td>
-<td>{{ $l->reason ?? '' }}@if($l->kind === 'redeem' && in_array($l->id, $voided)) 已撤銷
-@elseif($l->kind === 'redeem' && \App\Support\StaffAccess::can('admin'))
+<td>{{ $l->reason ?? '' }}@if($l->related_package_id) · {{ $l->kind === 'transfer_out' ? '轉給' : '來自' }}患者 #{{ $related[$l->related_package_id] ?? '—' }}@endif
+@if($l->kind === 'redeem' && in_array($l->id, $voided)) 已撤銷
+@elseif($l->kind === 'redeem' && $owner->status === 'active' && \App\Support\StaffAccess::can('admin'))
 <form method="post" action="/staff/packages/ledger/{{ $l->id }}/void">@csrf<label>撤銷原因 <input name="reason" maxlength="200" required></label><button>撤銷扣減</button></form>@endif</td></tr>@endforeach
 </tbody></table></div></details>
 @endif
 @if(\App\Support\StaffAccess::can('reception'))
 @if($plans->isNotEmpty())
 <form method="post" action="/staff/patients/{{ $person->id }}/packages">@csrf
-    <label>出售套票 <select name="plan_id">@foreach($plans as $plan)<option value="{{ $plan->id }}">{{ $plan->name }} · {{ $plan->service }} · {{ $plan->sessions + $plan->bonus_sessions }} 次 · HK$ {{ number_format($plan->price_cents / 100, 2) }} · {{ $plan->validity_days }} 日</option>@endforeach</select></label>
+    <label>出售套票或儲值 <select name="plan_id">@foreach($plans as $plan)<option value="{{ $plan->id }}">{{ $plan->name }} · {{ $plan->kind === 'stored_value' ? '儲值 HK$ '.number_format(($plan->value_cents + $plan->bonus_value_cents) / 100, 2) : $plan->service.' · '.($plan->sessions + $plan->bonus_sessions).' 次' }} · 售價 HK$ {{ number_format($plan->price_cents / 100, 2) }} · {{ $plan->validity_days }} 日</option>@endforeach</select></label>
     <label>付款方式 <select name="method">@foreach(['cash'=>'現金','card'=>'銀行卡','fps'=>'轉數快','other'=>'其他'] as $key=>$name)<option value="{{ $key }}">{{ $name }}</option>@endforeach</select></label>
     <button>確認收款及售出</button>
 </form>

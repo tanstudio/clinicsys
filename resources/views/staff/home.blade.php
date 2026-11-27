@@ -10,7 +10,7 @@
 <div class="portal-index">
 @if(\App\Support\StaffAccess::hq())
 <a class="portal-item" href="/staff/branches"><span class="item-icon">@include('staff.icon', ['module'=>'branches'])</span><span class="item-text"><strong>分店管理</strong><small>查看分店名單及新增分店</small></span><svg class="item-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></a>
-<a class="portal-item" href="/staff/loyalty"><span class="item-icon">@include('staff.icon', ['module'=>'loyalty'])</span><span class="item-text"><strong>會員及套票規則</strong><small>會員等級門檻、折扣及療程套票方案</small></span><svg class="item-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></a>
+<a class="portal-item" href="/staff/loyalty"><span class="item-icon">@include('staff.icon', ['module'=>'loyalty'])</span><span class="item-text"><strong>會員及套票規則</strong><small>會員等級、療程套票、儲值、退款及轉讓規則</small></span><svg class="item-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></a>
 <a class="portal-item" href="/staff/whatsapp"><span class="item-icon">@include('staff.icon', ['module'=>'inbox'])</span><span class="item-text"><strong>WhatsApp 設定</strong><small>Meta 通道、接待分店及通知範本</small></span><svg class="item-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></a>
 @endif
 @if(\App\Support\StaffAccess::can('admin'))

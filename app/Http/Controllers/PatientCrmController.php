@@ -102,19 +102,21 @@ class PatientCrmController
         $encounters = StaffAccess::can('doctor') ? DB::table('encounters')->where($scope)->pluck('id','appointment_id') : collect();
         // Tiers and packages follow the patient across branches; selling uses the current branch's plans.
         $loyalty = Loyalty::tier($patient);
-        $packages = DB::table('patient_packages as p')->join('services as s', 's.id', '=', 'p.service_id')
+        $packages = DB::table('patient_packages as p')->leftJoin('services as s', 's.id', '=', 'p.service_id')
             ->where('p.patient_id', $patient)->select('p.*', 's.name_zh as service')->orderByDesc('p.id')->get();
         $balances = Loyalty::balances($packages->pluck('id'));
         $ledger = DB::table('package_ledger as l')->join('branches as b', 'b.id', '=', 'l.branch_id')
             ->whereIn('l.package_id', $packages->pluck('id'))->orderByDesc('l.created_at')->orderByDesc('l.id')->get(['l.*', 'b.name_zh as branch']);
         $voided = $ledger->whereNotNull('voids_id')->pluck('voids_id')->all();
         $plans = DB::table('package_plans as p')->join('package_plan_branches as pb', 'pb.plan_id', '=', 'p.id')
-            ->join('services as s', 's.id', '=', 'p.service_id')->where('pb.branch_id', $branch)->where('p.active', true)
-            ->orderBy('p.name')->get(['p.*', 's.name_zh as service']);
+            ->leftJoin('services as s', 's.id', '=', 'p.service_id')->where('pb.branch_id', $branch)->where('p.active', true)
+            ->orderBy('p.kind')->orderBy('p.name')->get(['p.*', 's.name_zh as service']);
+        // Ledger rows of transfers name the other package; show its owner only as a package reference.
+        $related = DB::table('patient_packages')->whereIn('id', $ledger->pluck('related_package_id')->filter())->pluck('patient_id', 'id');
         $tiers = DB::table('customer_tiers')->where('active', true)->orderBy('threshold_cents')->get();
         $today = Loyalty::today();
         return view('clinical.patient', compact('person','email','bookings','events','profile','followups','threads','encounters',
-            'loyalty','packages','balances','ledger','voided','plans','tiers','today'));
+            'loyalty','packages','balances','ledger','voided','plans','tiers','today','related','branch'));
     }
 
     public function profile(Request $request, int $patient)

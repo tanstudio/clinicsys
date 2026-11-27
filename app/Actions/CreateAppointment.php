@@ -28,7 +28,7 @@ class CreateAppointment
                 return null;
             }
             $name = Str::squish($data['name']);
-            $key = hash_hmac('sha256', Str::lower($name).'|'.PatientPhone::identity($data['phone']), config('app.key'));
+            $key = PatientPhone::patientKey($name, $data['phone']);
             $patient = Patient::firstOrCreate(['identity_key' => $key], ['name' => $name, 'phone' => PatientPhone::international($data['phone'])]);
             $appointment = $patient->appointments()->create([
                 'slot_id' => $slot->id, 'reference' => (string) Str::uuid(),

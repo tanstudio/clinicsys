@@ -12,6 +12,7 @@ The site sits behind Cloudflare, so pages load stylesheets and scripts through c
 | `apply.sh.template` | Server-side script, rendered into each package as `apply.sh`. |
 | `backup.php` | Server-side private database dump taken before the entry switch. |
 | `deploy.py` | Local client: uploads the package, runs `apply.sh`, checks the live site and rolls back on failure. |
+| `task.py` | Local client: runs one allow-listed maintenance task on the live release after a database backup. |
 
 `storage/` is ignored by git, so packages, logs and backups never enter the repository.
 
@@ -60,6 +61,26 @@ python3 deploy/deploy.py storage/releases/main-<new commit>
 
 Each run asks for the DirectAdmin password at a hidden prompt.
 The password stays in process memory and is never written anywhere.
+
+## Maintenance tasks
+
+`task.py` runs one task from a fixed list against the live release; it never takes a shell command.
+
+| Task | Runs |
+|---|---|
+| `demo-seed` | `DemoDataSeeder`: 50 tagged demonstration patients with bookings, visits, receipts, packages, stored value, inventory, HR and inbox data. |
+| `demo-purge` | `DemoDataPurgeSeeder`: removes that tagged data set. |
+
+```sh
+python3 deploy/task.py demo-seed --check
+python3 deploy/task.py demo-seed
+```
+
+The server dumps the database to `~/clinic-releases/tasks/<task id>/pre-task-backup.sql`, then runs the seeder with `CLINIC_DEMO_DATA=production` for that one process.
+The seeders refuse production without that variable, and the variable never enters `.env`.
+Demonstration bookings carry no email and no WhatsApp consent, so no notification reaches the demonstration phone numbers.
+The demonstration branches and their timetable appear on the public booking pages.
+The log is saved to `storage/releases/tasks/<task id>/task.log`.
 
 ## What a deployment does
 

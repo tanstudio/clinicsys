@@ -252,11 +252,11 @@ try {
     config(['app.url'=>'https://clinic.example.test']);
     $ready=app(\App\Messaging\WhatsAppReadiness::class);
     $checksResult=$ready->checks();
-    checkCloud(count($checksResult)===16 && collect($checksResult)->every('passed',true),'Complete local configuration did not pass preflight');
+    checkCloud(count($checksResult)===17 && collect($checksResult)->every('passed',true),'Complete local configuration did not pass preflight');
     checkCloud(\Illuminate\Support\Facades\Artisan::call('clinic:whatsapp-check',['--json'=>true])===0,'Preflight CLI failed');
     $output=\Illuminate\Support\Facades\Artisan::output();
     $decoded=json_decode($output,true,512,JSON_THROW_ON_ERROR);
-    checkCloud($decoded['passed']===16 && $decoded['total']===16 && $decoded['live_verified']===false,'Preflight claimed live verification');
+    checkCloud($decoded['passed']===17 && $decoded['total']===17 && $decoded['live_verified']===false,'Preflight claimed live verification');
     checkCloud(!str_contains($output,$config['access_token']) && !str_contains($output,$config['app_secret']) && !str_contains($output,$config['verify_token']),'Preflight leaked credentials');
     config(['clinic_messaging.whatsapp.verify_token'=>'short']);
     DB::table('whatsapp_settings')->where('id',1)->update(['default_branch_id'=>null]);

@@ -10,3 +10,6 @@ Route::post('patients/{patient}/packages', [LoyaltyController::class, 'sell'])->
 Route::post('patients/{patient}/tier', [LoyaltyController::class, 'setTier'])->whereNumber('patient');
 Route::post('pos/redeem', [LoyaltyController::class, 'redeem']);
 Route::post('packages/ledger/{entry}/void', [LoyaltyController::class, 'void'])->whereNumber('entry');
+Route::post('loyalty/settings', [LoyaltyController::class, 'saveSettings']);
+Route::post('packages/{package}/refund', [LoyaltyController::class, 'refund'])->whereNumber('package');
+Route::post('packages/{package}/transfer', [LoyaltyController::class, 'transfer'])->whereNumber('package');

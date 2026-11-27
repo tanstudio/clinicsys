@@ -17,8 +17,8 @@ class DemoDataPurgeSeeder extends Seeder
 {
     public function run(): void
     {
-        if (!app()->environment('local', 'testing')) {
-            throw new \RuntimeException('Demonstration data currently requires a local or testing environment.');
+        if (!DemoDataSeeder::allowed()) {
+            throw new \RuntimeException('Demonstration data requires a local or testing environment, or CLINIC_DEMO_DATA=production from deploy/task.py.');
         }
         $patients = DB::table('crm_profiles')->get()
             ->filter(fn ($row) => in_array(DemoDataSeeder::TAG, array_map('trim', explode(',', Crypt::decryptString($row->tags))), true))
@@ -54,7 +54,11 @@ class DemoDataPurgeSeeder extends Seeder
             // Packages before receipts and encounters: the ledger references encounters, packages reference receipts.
             $packages = DB::table('patient_packages')->whereIn('patient_id', $patients)->pluck('id');
             $packageRows = DB::table('package_ledger')->whereIn('package_id', $packages)->orderByDesc('id')->pluck('id');
+            DB::table('package_refunds')->whereIn('package_id', $packages)->delete();
+            // Void rows reference the redemption they reverse, and MySQL deletes an IN list in key order.
+            DB::table('package_ledger')->whereIn('package_id', $packages)->whereNotNull('voids_id')->delete();
             foreach ($packageRows->chunk(500) as $chunk) {
+                DB::table('message_projections')->where('source', 'package_ledger')->whereIn('source_id', $chunk)->delete();
                 DB::table('package_ledger')->whereIn('id', $chunk)->delete();
             }
             DB::table('patient_packages')->whereIn('id', $packages)->delete();
@@ -93,7 +97,7 @@ class DemoDataPurgeSeeder extends Seeder
             DB::table('appointments')->whereIn('id', $appointments)->delete();
             $templateCount = DB::table('clinical_templates')->whereIn('id', $templates)->delete();
             // Demo rules go only when no remaining package or manual tier uses them.
-            $plans = DB::table('package_plans')->whereIn('name', array_column(DemoDataSeeder::DEMO_PLANS, 0))
+            $plans = DB::table('package_plans')->whereIn('name', [...array_column(DemoDataSeeder::DEMO_PLANS, 0), ...array_column(DemoDataSeeder::DEMO_STORED, 0)])
                 ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('patient_packages as p')->whereColumn('p.plan_id', 'package_plans.id'))->delete();
             $tiers = DB::table('customer_tiers')->whereIn('name', array_column(DemoDataSeeder::DEMO_TIERS, 0))
                 ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('patient_tiers as t')->whereColumn('t.tier_id', 'customer_tiers.id'))->delete();

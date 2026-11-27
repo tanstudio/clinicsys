@@ -12,6 +12,7 @@ class CloudWhatsApp
     public const KINDS = [
         'confirmed'=>'預約確認', 'rescheduled'=>'預約改期', 'cancelled'=>'預約取消',
         'reminder'=>'預約提醒', 'payment'=>'收款通知', 'feedback'=>'診後隨訪', 'marketing'=>'推廣',
+        'package'=>'套票餘額',
     ];
     public const PARAMETERS = [
         'confirmed'=>['reference','starts_at','branch_name'],
@@ -20,6 +21,7 @@ class CloudWhatsApp
         'reminder'=>['reference','starts_at','branch_name'],
         'payment'=>['reference','amount','branch_name'],
         'feedback'=>['branch_name'], 'marketing'=>['body','branch_name'],
+        'package'=>['package_name','change','balance','expires_on','branch_name'],
     ];
 
     public function send(object $entry, object $thread, string $body): array

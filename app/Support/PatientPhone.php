@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Str;
+
 class PatientPhone
 {
     // Bare numbers retain the original Hong Kong API contract.
@@ -17,5 +19,11 @@ class PatientPhone
         $phone = self::international($phone);
         // Preserve existing HK hashes so upgrading does not split patient history.
         return str_starts_with($phone, '+852') ? substr($phone, 4) : $phone;
+    }
+
+    /** The patient identity key: the squished, lower-cased name and the phone identity. */
+    public static function patientKey(string $name, string $phone): string
+    {
+        return hash_hmac('sha256', Str::lower(Str::squish($name)).'|'.self::identity($phone), config('app.key'));
     }
 }
