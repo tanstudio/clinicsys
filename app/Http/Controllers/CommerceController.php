@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Loyalty;
 use App\Support\StaffAccess;
 use App\Models\Patient;
 use Carbon\CarbonImmutable;
@@ -19,7 +20,7 @@ class CommerceController
             ->join('slots as slot', 'slot.id', '=', 'a.slot_id')
             ->where('e.branch_id', $branch)
             ->whereNull('a.cancelled_at')
-            ->select('a.reference', 'e.id', 'e.patient_id', 'slot.starts_at')->orderByDesc('e.id');
+            ->select('a.reference', 'e.id', 'e.patient_id', 'slot.starts_at', 'slot.service_id')->orderByDesc('e.id');
     }
 
     private function ledgerFilters(Request $request, array $rules): array
@@ -115,11 +116,12 @@ class CommerceController
         StaffAccess::allow('admin', 'reception');
         $branch = StaffAccess::branch();
         $filters = $this->ledgerFilters($request, [
-            'reference' => 'nullable|string|max:36', 'method' => 'nullable|in:cash,card,fps,other',
+            'reference' => 'nullable|string|max:36', 'method' => 'nullable|in:cash,card,fps,other,package',
         ]);
         $encounters = $this->encounters($branch)
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('receipts as r')->whereColumn('r.encounter_id', 'e.id'))->get();
-        $query = DB::table('receipts as r')->join('appointments as a', 'a.id', '=', 'r.appointment_id')
+        // Package sales have no appointment, so the join is a left join.
+        $query = DB::table('receipts as r')->leftJoin('appointments as a', 'a.id', '=', 'r.appointment_id')
             ->where('r.branch_id', $branch);
         if (isset($filters['reference']) && $filters['reference'] !== '') {
             $reference = trim($filters['reference']);
@@ -131,7 +133,10 @@ class CommerceController
         $totalCents = (clone $query)->sum('r.amount_cents');
         $receipts = $query->select('r.*', 'a.reference as booking')->orderByDesc('r.id')->paginate(25)->appends($filters);
         $patients = Patient::whereIn('id', $encounters->pluck('patient_id')->merge($receipts->pluck('patient_id')))->get()->keyBy('id');
-        return view('commerce.pos', compact('encounters', 'receipts', 'filters', 'totalCents', 'patients'));
+        $tiers = $encounters->pluck('patient_id')->unique()->mapWithKeys(fn ($id) => [$id => Loyalty::tier($id)['tier']]);
+        $redeemable = $encounters->mapWithKeys(fn ($e) => [$e->id => Loyalty::eligible($e->patient_id, $branch, $e->service_id, substr($e->starts_at, 0, 10))])
+            ->filter(fn ($packages) => $packages->isNotEmpty());
+        return view('commerce.pos', compact('encounters', 'receipts', 'filters', 'totalCents', 'patients', 'tiers', 'redeemable'));
     }
 
     public function collect(Request $request)
@@ -158,10 +163,13 @@ class CommerceController
                     && $prior->description === $data['description'], 409, '此診症已有收據。');
                 return $prior->id;
             }
+            // The receipt keeps the tier that applied at payment, even if the rule changes later.
+            $tier = Loyalty::tier($encounter->patient_id)['tier'];
             $id = DB::table('receipts')->insertGetId([
                 'reference' => (string) Str::uuid(), 'branch_id' => $branch, 'patient_id' => $encounter->patient_id,
                 'appointment_id' => $encounter->appointment_id, 'encounter_id' => $encounter->id,
                 'description' => $data['description'], 'amount_cents' => $cents, 'method' => $data['method'],
+                'tier_name' => $tier?->name, 'discount_percent' => $tier?->discount_percent,
                 'created_at' => now('UTC'),
             ]);
             event('clinic.receipt.paid', [$id]);
@@ -173,7 +181,7 @@ class CommerceController
     public function receipt(int $receipt)
     {
         StaffAccess::allow('admin', 'reception');
-        $item = DB::table('receipts as r')->join('appointments as a', 'a.id', '=', 'r.appointment_id')
+        $item = DB::table('receipts as r')->leftJoin('appointments as a', 'a.id', '=', 'r.appointment_id')
             ->join('branches as b', 'b.id', '=', 'r.branch_id')->where('r.branch_id', StaffAccess::branch())
             ->where('r.id', $receipt)->select('r.*', 'a.reference as booking', 'b.name_zh as branch')->firstOrFail();
         return view('commerce.receipt', compact('item'));

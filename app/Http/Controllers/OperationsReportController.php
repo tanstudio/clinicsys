@@ -80,6 +80,21 @@ class OperationsReportController
                 'efficiency' => $capacity ? $completed / ($capacity * 0.5) : null,
             ];
         }
+        // Packages: sales and net redemptions in the period, and sessions left today in unexpired packages.
+        $sold = DB::table('receipts')->whereIn('branch_id', $scoped)->where('kind', 'package')
+            ->where('created_at', '>=', $utcFrom)->where('created_at', '<', $utcEnd)->groupBy('branch_id')
+            ->selectRaw('branch_id, COUNT(*) AS packages, SUM(amount_cents) AS cents')->get()->keyBy('branch_id');
+        $used = DB::table('package_ledger')->whereIn('branch_id', $scoped)->whereIn('kind', ['redeem', 'void'])
+            ->where('created_at', '>=', $utcFrom)->where('created_at', '<', $utcEnd)->groupBy('branch_id')
+            ->selectRaw('branch_id, -SUM(sessions) AS sessions')->pluck('sessions', 'branch_id');
+        $left = DB::table('package_ledger as l')->join('patient_packages as p', 'p.id', '=', 'l.package_id')
+            ->whereIn('p.sold_branch_id', $scoped)->where('p.expires_on', '>=', $today->toDateString())
+            ->groupBy('p.sold_branch_id')->selectRaw('p.sold_branch_id, SUM(l.sessions) AS sessions')->pluck('sessions', 'sold_branch_id');
+        $packageStats = [];
+        foreach ($scoped as $id) {
+            $packageStats[$id] = ['packages' => (int) ($sold[$id]->packages ?? 0), 'revenue' => ($sold[$id]->cents ?? 0) / 100,
+                'redeemed' => (int) ($used[$id] ?? 0), 'left' => (int) ($left[$id] ?? 0)];
+        }
         if (($data['format'] ?? null) === 'csv') {
             return response()->streamDownload(function () use ($from, $to, $branches, $summary, $metrics) {
                 $stream = fopen('php://output', 'w');
@@ -104,6 +119,6 @@ class OperationsReportController
                 'X-Content-Type-Options' => 'nosniff',
             ]);
         }
-        return view('commerce.reports', compact('from', 'to', 'branch', 'branches', 'summary', 'counts', 'metrics', 'metric', 'doctors', 'usage'));
+        return view('commerce.reports', compact('from', 'to', 'branch', 'branches', 'summary', 'counts', 'metrics', 'metric', 'doctors', 'usage', 'packageStats'));
     }
 }
